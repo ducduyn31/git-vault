@@ -126,12 +126,13 @@ invoked by git itself via the filter driver; the rest are user-facing.
 ## Tooling & CI
 
 - Go 1.23, module path `github.com/ducduyn31/git-vault`.
-- `flake.nix`: devShell (go, golangci-lint, goreleaser, gofumpt) and a
-  package output (`buildGoModule`) so `nix run` builds/runs the binary.
+- `flake.nix`: devShell (go, golangci-lint, goreleaser, gofumpt, go-task) and
+  a package output (`buildGoModule`) so `nix run` builds/runs the binary.
 - GitHub Actions: one workflow for lint (golangci-lint) + test + build on
   push/PR; a separate goreleaser workflow triggered on tag push.
-- `.golangci.yml`, `Makefile` (build/test/lint/fmt/install), `.gitignore`,
-  `README.md` skeleton, `LICENSE` (MIT), `.editorconfig`.
+- `.golangci.yml`, `Taskfile.yml` (build/test/lint/fmt/install tasks, via
+  go-task), `.gitignore`, `README.md` skeleton, `LICENSE` (MIT),
+  `.editorconfig`.
 - One stdlib-only smoke test (root cobra command executes without error)
   so CI has something real to pass.
 
