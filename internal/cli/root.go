@@ -6,8 +6,10 @@ import "github.com/spf13/cobra"
 // wired in.
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "git-vault",
-		Short: "Transparently encrypt secret files in a git repository",
+		Use:           "git-vault",
+		Short:         "Transparently encrypt secret files in a git repository",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 	root.AddCommand(
 		newLoginCmd(),

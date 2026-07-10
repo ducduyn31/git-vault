@@ -13,7 +13,7 @@ import (
 // own pluggable Provider registry.
 //
 // sops's keyservice protocol has a fixed, closed set of key types (kms,
-// pgp, gcp_kms, azure_keyvault, vault, age, hckms) with no extension point
+// pgp, gcp_kms, azure_keyvault, vault, age) with no extension point
 // for a new one without forking sops. git-vault reuses the age key type's
 // `recipient` string as an opaque carrier: it is never a real age
 // recipient, only a "<provider-name>:<key-id>" identifier that Server
