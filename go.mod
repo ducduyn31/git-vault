@@ -1,6 +1,6 @@
 module github.com/ducduyn31/git-vault
 
-go 1.26.5
+go 1.26.4
 
 require (
 	github.com/getsops/sops/v3 v3.13.2
