@@ -17,7 +17,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print the git-vault version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), Version)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), Version)
 			return nil
 		},
 	}

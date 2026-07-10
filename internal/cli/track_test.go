@@ -15,7 +15,7 @@ func TestTrackCmd_AppendsPattern(t *testing.T) {
 	old, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(dir))
-	defer os.Chdir(old)
+	defer func() { _ = os.Chdir(old) }()
 
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
