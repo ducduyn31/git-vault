@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+
+	"github.com/ducduyn31/git-vault/internal/gitattr"
 )
 
 func newTrackCmd() *cobra.Command {
@@ -12,7 +12,7 @@ func newTrackCmd() *cobra.Command {
 		Short: "Track a file pattern for git-vault encryption",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("git vault track: not implemented in scaffold")
+			return gitattr.Track(".gitattributes", args[0])
 		},
 	}
 }

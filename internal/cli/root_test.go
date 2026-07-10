@@ -32,7 +32,6 @@ func TestStubCommands_NotImplemented(t *testing.T) {
 		args []string
 	}{
 		{"login", []string{"login"}},
-		{"track", []string{"track", "*.secret.yaml"}},
 		{"install", []string{"install"}},
 		{"encrypt", []string{"encrypt", "file.txt"}},
 		{"decrypt", []string{"decrypt", "file.txt"}},
