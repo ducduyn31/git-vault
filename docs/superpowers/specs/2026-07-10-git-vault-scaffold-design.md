@@ -24,12 +24,15 @@ specs/plans.
 Modeled directly on git-lfs, which is the established pattern for "git
 extension that transforms file content on checkout/commit":
 
-1. **Filter driver.** `git vault install` registers a git filter driver:
-   `filter.git-vault.clean`, `filter.git-vault.smudge`,
-   `filter.git-vault.required true`. Git invokes
-   `git-vault clean`/`git-vault smudge` with file content on stdin and
-   expects transformed content on stdout — no file paths, no interactivity,
-   no tty.
+1. **Filter driver, fail-closed.** `git vault install` (or
+   `git vault install --global`) registers a git filter driver:
+   `filter.git-vault.clean`, `filter.git-vault.smudge`, and critically
+   `filter.git-vault.required true`. `required` means if clean/smudge ever
+   errors (no session, no provider, sops failure) git aborts the operation
+   instead of silently passing raw content through. `--global` installs
+   the filter driver in the user's global git config (same pattern as
+   `git lfs install --global`), so any repo cloned afterwards is protected
+   immediately, with no per-clone re-init step to forget.
 2. **Attribute tracking.** `git vault track "<pattern>"` appends a line to
    `.gitattributes`: `<pattern> filter=git-vault diff=git-vault -text`
    (same shape as `git lfs track`). git-vault does not need its own
@@ -39,6 +42,15 @@ extension that transforms file content on checkout/commit":
 3. **Explicit mode.** `git vault encrypt/decrypt <file>` performs the same
    seal/open operation outside the filter path, for manual use or
    scripting.
+4. **No pre-commit hook.** git-vault does not install a pre-commit hook —
+   it would risk clobbering/conflicting with a repo's existing hook setup
+   (husky, pre-commit framework, etc.). The fail-closed filter is the
+   safety net; `git vault status` is available for a user or their CI to
+   wire into their own hook if they want an extra check.
+
+See `2026-07-10-git-vault-ux-safety-design.md` for why these specific
+choices (fail-closed, global install, no comment-marker opt-in) were made
+— they respond directly to real footguns found in a prior art review.
 
 ### Auth is decoupled from the filter path
 
