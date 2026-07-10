@@ -6,16 +6,17 @@ Status: approved (scaffold only — no crypto/backend logic implemented yet)
 ## Purpose
 
 `git-vault` is a Go-based git extension that transparently encrypts secret
-files in a repository, using a pluggable backend to source the decryption
-key from an SSO-gated source (e.g. an internal identity provider). This
-document specs the initial professional project scaffold: repo layout,
-tooling, CI, and package boundaries. It does not implement encryption or
-any real backend — those are separate follow-up specs/plans.
+files in a repository, using a pluggable key-provider system (not limited
+to SSO — SSO is the first provider, others follow the same interface).
+This document specs the initial professional project scaffold: repo
+layout, tooling, CI, and package boundaries. It does not implement
+encryption or any real provider — those are separate follow-up
+specs/plans.
 
 ## Non-goals (for this scaffold)
 
-- No real SSO backend implementation (only a stub/mock `Backend`).
-- No real sops integration logic beyond a wrapper package stub.
+- No real key provider implementation (only a stub/mock `Provider`).
+- No real sops integration logic beyond wrapper/keyservice package stubs.
 - No published releases; goreleaser config exists but is not exercised.
 
 ## Git integration model
@@ -45,53 +46,64 @@ Git filters run in contexts with no tty and may run concurrently or
 non-interactively (e.g. during a parallel checkout). A filter must never
 block on an interactive SSO prompt. So:
 
-- `git vault login` performs the SSO flow once (interactively) and caches a
-  short-lived session/data key locally (`~/.cache/git-vault/`).
+- `git vault login` performs a provider's interactive flow once (e.g. SSO)
+  and caches a short-lived session locally (`~/.cache/git-vault/`).
 - `clean`/`smudge`/`encrypt`/`decrypt` only ever *read* the cached session.
   If it's missing or expired, they fail fast with a message telling the
   user to run `git vault login` — they never attempt to trigger a login
   themselves.
+- Not every provider needs a session (e.g. a KMS-backed provider might use
+  ambient cloud credentials instead) — the session cache is used by
+  providers that need it, not a requirement of the `Provider` interface.
 
-## Encryption engine
+## Encryption engine and extensible providers
 
 Rather than reimplementing structured partial-file encryption (only
 encrypt the values in a YAML/JSON/ENV file, keep keys/structure readable),
-git-vault vendors `go.mozilla.org/sops/v3`, which already solves this and
-already has a pluggable keyservice concept. git-vault's own code is:
+git-vault uses `github.com/getsops/sops/v3` as a library, unmodified.
+sops already supports pluggable key backends and, importantly, already has
+an extension point designed for exactly this scaffold's goal: the
+**keyservice protocol** — sops delegates Encrypt/Decrypt of the data key to
+a local or remote gRPC `KeyServiceServer` rather than requiring new key
+types to be compiled into sops itself.
 
-- A CLI (git-lfs-shaped UX) and git integration (filter/attributes/session
-  cache), plus
-- A `Backend` interface that supplies sops with a data key, backed by the
-  cached SSO session.
-
-This keeps the crypto/file-format surface entirely in a well-audited
-upstream library; git-vault only owns key sourcing and git plumbing.
+git-vault runs its own local `KeyServiceServer` (`internal/keyservice`)
+that implements Encrypt/Decrypt by dispatching to a **pluggable
+`Provider`** — SSO is the first provider, not the only one. Adding a new
+backend later (an internal KMS, HashiCorp Vault via a custom flow,
+whatever) means implementing one small `Provider` interface and
+registering it — no changes to `internal/vault`, `internal/cli`, or sops
+itself. Because this is sops's own real extension mechanism, git-vault
+files stay interoperable with stock sops tooling, and a single file can
+even mix a git-vault provider key with a native sops key (age/KMS/PGP/
+Vault) in the same key group.
 
 ## Package layout
 
 ```
 cmd/git-vault/          main.go — cobra root, wires subcommands
 internal/cli/           login, track, install, encrypt, decrypt, clean, smudge, status, version
-internal/backend/       Backend interface (Login/GetDataKey) + registry; stub backend only for now
-internal/session/       local session cache (~/.cache/git-vault): read/write, expiry check
-internal/vault/         wraps sops using a session-supplied key (Seal/Open, streaming for clean/smudge)
+internal/keyservice/    sops KeyServiceServer implementation + Provider interface + registry; stub provider only for now
+internal/session/       local session cache (~/.cache/git-vault): read/write, expiry check — used by providers that need it
+internal/vault/         thin wrapper calling sops-as-a-library, configured to use git-vault's local keyservice (Seal/Open, streaming for clean/smudge)
 internal/gitattr/       read/write .gitattributes track lines (git-lfs-style)
-internal/config/        backend selection + session settings (not pattern tracking)
+internal/config/        which provider(s)/keyservice endpoint to use, session settings (not pattern tracking)
 ```
 
 Each package has one job:
-- `internal/backend` never knows about sops or git.
-- `internal/vault` never knows about SSO or git plumbing — it takes a key
-  and file bytes.
+- `internal/keyservice` never knows about git or file formats — it's a
+  sops KeyServiceServer plus a `Provider` registry.
+- `internal/vault` never knows about providers or SSO — it only knows how
+  to call sops with a configured keyservice endpoint.
 - `internal/gitattr` never knows about encryption — it only edits
   `.gitattributes` lines.
-- `internal/session` never knows about sops or backends — it's a generic
-  cache-with-expiry.
+- `internal/session` never knows about sops or providers — it's a generic
+  cache-with-expiry, used by whichever providers need it.
 
 This means each can be tested and reasoned about independently, and a real
-backend/crypto implementation later touches `internal/backend` and
-`internal/vault` without needing changes to `internal/cli`, `internal/
-gitattr`, or `internal/session`.
+provider implementation later only touches `internal/keyservice` (add a
+`Provider`) without needing changes to `internal/cli`, `internal/vault`,
+`internal/gitattr`, or `internal/session`.
 
 ## CLI
 
@@ -115,4 +127,4 @@ invoked by git itself via the filter driver; the rest are user-facing.
 
 Only a placeholder smoke test is included at this stage, per project
 scope (scaffold, not implementation). Real unit tests land alongside the
-backend/vault/gitattr implementations in follow-up work.
+keyservice/vault/gitattr implementations in follow-up work.
