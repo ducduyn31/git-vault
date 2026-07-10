@@ -1,0 +1,14 @@
+# Build output
+/git-vault
+/dist/
+
+# Go
+*.test
+*.out
+
+# Nix
+result
+result-*
+
+# Editor/OS
+.DS_Store
