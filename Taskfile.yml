@@ -1,0 +1,43 @@
+version: '3'
+
+vars:
+  BIN: git-vault
+  PKG: ./cmd/git-vault
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the git-vault binary
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BIN}}'
+    cmds:
+      - go build -o {{.BIN}} {{.PKG}}
+
+  test:
+    desc: Run the test suite
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format code with gofumpt
+    cmds:
+      - gofumpt -l -w .
+
+  install:
+    desc: Install the git-vault binary to GOBIN
+    cmds:
+      - go install {{.PKG}}
