@@ -37,7 +37,7 @@ func TestLoginCmd_GCPKMS_FailsWithoutReachableKMS(t *testing.T) {
 	chdirTemp(t)
 	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
 		Provider:      gcpkms.Name,
-		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/test",
+		KeyResourceID: "not-a-valid-resource-id",
 	}))
 
 	cmd := NewRootCmd()
