@@ -13,7 +13,7 @@ func newSmudgeCmd() *cobra.Command {
 		Args:   cobra.ExactArgs(1),
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, _, err := newLocalVault()
+			v, _, err := newVault()
 			if err != nil {
 				return err
 			}

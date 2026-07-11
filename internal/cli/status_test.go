@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 )
 
 func TestStatusCmd_NoGitattributes_ReportsNothingTracked(t *testing.T) {
@@ -25,6 +28,13 @@ func TestStatusCmd_NoGitattributes_ReportsNothingTracked(t *testing.T) {
 func TestStatusCmd_ReportsPlaintextThenEncrypted(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	chdirTemp(t)
+	// Write .git-vault.yaml directly rather than calling runInstall(t):
+	// install also registers filter.git-vault.{clean,smudge,required} in
+	// git config, which would make the "git add" below shell out to a
+	// real "git-vault" binary on PATH — not built by `go test`. status
+	// only needs the config file so encrypt's newVault() below succeeds;
+	// it doesn't need the filter driver wired up.
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: local.Name}))
 
 	trackCmd := NewRootCmd()
 	trackCmd.SetOut(&bytes.Buffer{})

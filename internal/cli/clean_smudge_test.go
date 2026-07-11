@@ -10,6 +10,8 @@ import (
 
 func TestCleanCmd_ThenSmudgeCmd_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
 
 	original := "password: hunter2\n"
 

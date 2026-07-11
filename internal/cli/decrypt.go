@@ -8,7 +8,7 @@ func newDecryptCmd() *cobra.Command {
 		Short: "Decrypt a file in place, outside the filter path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, _, err := newLocalVault()
+			v, _, err := newVault()
 			if err != nil {
 				return err
 			}

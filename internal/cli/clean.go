@@ -13,7 +13,7 @@ func newCleanCmd() *cobra.Command {
 		Args:   cobra.ExactArgs(1),
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, recipients, err := newLocalVault()
+			v, recipients, err := newVault()
 			if err != nil {
 				return err
 			}
