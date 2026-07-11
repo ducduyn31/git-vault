@@ -36,8 +36,11 @@ const Name = "local"
 // DefaultIdentityPath) when set.
 const IdentityPathEnvVar = "GIT_VAULT_LOCAL_IDENTITY_PATH"
 
-// Provider is a Provider backed by one or more locally generated X25519
-// age identities persisted at IdentityPath, one per line, newest last.
+// Provider is a Provider backed by one or more locally generated age
+// identities persisted at IdentityPath, one per line, newest last. New
+// installs and every Rotate generate a post-quantum hybrid ML-KEM-768+
+// X25519 identity; older plain-X25519 identities (from before this
+// changed) remain valid for decrypting their own ciphertext.
 type Provider struct {
 	IdentityPath string
 }
