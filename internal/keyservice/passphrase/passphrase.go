@@ -53,7 +53,7 @@ func defaultPrompt() (string, error) {
 		return "", fmt.Errorf("passphrase: %s not set and stdin is not a terminal to prompt for one", EnvVar)
 	}
 	if _, err := fmt.Fprint(os.Stderr, "git-vault passphrase: "); err != nil {
-		return "", err
+		return "", fmt.Errorf("passphrase: write prompt: %w", err)
 	}
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr)
@@ -104,14 +104,14 @@ func NewWithSecret(secret string) *Provider {
 // and hidden input themselves still go through promptFn.
 func PromptNewSecret(out io.Writer) (string, error) {
 	if _, err := fmt.Fprintln(out, "Enter new passphrase:"); err != nil {
-		return "", err
+		return "", fmt.Errorf("passphrase: write prompt: %w", err)
 	}
 	first, err := promptFn()
 	if err != nil {
 		return "", err
 	}
 	if _, err := fmt.Fprintln(out, "Confirm new passphrase:"); err != nil {
-		return "", err
+		return "", fmt.Errorf("passphrase: write prompt: %w", err)
 	}
 	second, err := promptFn()
 	if err != nil {
