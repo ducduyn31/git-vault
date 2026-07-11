@@ -59,5 +59,5 @@ func Table(w io.Writer, rows [][2]string) {
 		}
 		t.Row(row[0], styled)
 	}
-	fmt.Fprintln(w, t.Render())
+	_, _ = fmt.Fprintln(w, t.Render())
 }
