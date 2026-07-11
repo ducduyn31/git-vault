@@ -148,9 +148,26 @@ version(s) in GCP to complete the rotation."*
 - **`internal/cli/rotate.go`:** add `case gcpkms.Name` per the Rotation
   section above — re-seals every tracked file so each one's wrapped data
   key moves onto the current primary KMS key version.
-- **`internal/cli/migrate.go`:** no special-casing expected — it already
-  resolves providers generically through `vaultForProvider`, so
-  migrating a repo to/from gcpkms should work once the above lands.
+- **`internal/cli/migrate.go`:** needs three changes, not zero:
+  - Add a `--key-resource-id` flag (required iff `--provider gcpkms`),
+    mirroring the existing `passphrase.EnvVar` check at line 42.
+  - Build a full `targetCfg := config.Config{Provider: target, KeyResourceID: keyResourceID}`
+    and pass it to `config.Save` at the end instead of the current
+    `config.Config{Provider: target}` — the latter silently drops
+    `KeyResourceID`, which would leave `.git-vault.yaml` pointing at an
+    empty resource ID and break every subsequent encrypt/decrypt.
+  - Replace the "nothing to do" guard's `target == cfg.Provider` check
+    (comment: "each provider has a single key source" — true for
+    `local`/`passphrase`, false for gcpkms, whose identity is
+    `provider + resource ID`) with a comparison of the *resolved
+    recipient strings*: build `oldVault`/`oldRecipients` and
+    `newVault`/`newRecipients` first, then reject only if
+    `oldRecipients[0] == newRecipients[0]`. This still rejects
+    `local→local`/`passphrase→passphrase` (always identical recipients)
+    but correctly allows `gcpkms(A)→gcpkms(B)` — migrating between two
+    different KMS keys under the same provider name, which `rotate`
+    cannot do (it assumes the resource ID is unchanged; `Open()` would
+    fail outright against a genuinely different KMS key).
 - **New: `docs/gcpkms-provider.md`.** User-facing setup guide (see
   below) — content is written during implementation, not in this spec.
 - **`README.md`:** add a link to `docs/gcpkms-provider.md` near
@@ -192,9 +209,11 @@ version(s) in GCP to complete the rotation."*
   `gcpkms.MasterKey` supports injecting a `grpcConn`/`clientOpts` for
   exactly this, the same pattern sops's own tests use. No real GCP
   project involved.
-- `vaultForProvider`/`install`/`login`/`rotate` CLI tests use that fake
-  provider the same way existing tests fake `local`/`passphrase`. The
-  rotate test should assert the resulting file's `enc` blob actually
-  changes (i.e. a fresh KMS Encrypt call happened), not just that the
-  command exits zero.
+- `vaultForProvider`/`install`/`login`/`rotate`/`migrate` CLI tests use
+  that fake provider the same way existing tests fake
+  `local`/`passphrase`. The rotate test should assert the resulting
+  file's `enc` blob actually changes (i.e. a fresh KMS Encrypt call
+  happened), not just that the command exits zero. The migrate test
+  should cover `gcpkms(A)→gcpkms(B)` specifically, since that's the case
+  the recipient-comparison fix (see Components touched) exists for.
 - No integration test against real GCP infrastructure — out of scope.
