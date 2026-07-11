@@ -150,6 +150,35 @@ func TestProvider_Decrypt_UnknownKeyIDFails(t *testing.T) {
 	require.ErrorContains(t, err, "no stored identity")
 }
 
+func TestProvider_Identities_MigratesLegacyIdentityFile(t *testing.T) {
+	dir := t.TempDir()
+	legacyPath := filepath.Join(dir, "identity.txt")
+	newPath := filepath.Join(dir, "identities")
+
+	legacy := &Provider{IdentityPath: legacyPath}
+	legacyRecipient, err := legacy.Recipient()
+	require.NoError(t, err)
+
+	p := &Provider{IdentityPath: newPath}
+	recipient, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, legacyRecipient, recipient, "must migrate the legacy identity, not generate a new one")
+
+	// A subsequent Rotate must append to the migrated file, not overwrite it.
+	newRecipient, err := p.Rotate()
+	require.NoError(t, err)
+	current, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, newRecipient, current)
+
+	// The legacy identity is still present and still decrypts its own ciphertext.
+	ciphertext, err := legacy.Encrypt(context.Background(), legacyRecipient, []byte("secret"))
+	require.NoError(t, err)
+	got, err := p.Decrypt(context.Background(), legacyRecipient, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret"), got)
+}
+
 func TestIdentityPathEnvVar_OverridesDefault(t *testing.T) {
 	custom := filepath.Join(t.TempDir(), "custom-identities")
 	t.Setenv(IdentityPathEnvVar, custom)

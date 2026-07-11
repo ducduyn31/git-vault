@@ -164,41 +164,75 @@ func (p *Provider) Decrypt(_ context.Context, keyID string, ciphertext []byte) (
 	return plaintext, nil
 }
 
-// identities loads every identity persisted at p.IdentityPath, generating
-// and persisting a single fresh one if the file doesn't exist yet.
+// identities loads every identity persisted at p.IdentityPath, migrating
+// forward a pre-rename identity.txt sibling if one exists (see
+// migrateLegacyIdentity), or generating and persisting a single fresh
+// identity if neither exists yet.
 func (p *Provider) identities() ([]*age.X25519Identity, error) {
 	data, err := os.ReadFile(p.IdentityPath)
-	if err == nil {
-		parsed, err := age.ParseIdentities(bytes.NewReader(data))
-		if err != nil {
-			return nil, fmt.Errorf("local: parse identities: %w", err)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("local: read identities: %w", err)
 		}
-		ids := make([]*age.X25519Identity, 0, len(parsed))
-		for _, id := range parsed {
-			x, ok := id.(*age.X25519Identity)
-			if !ok {
-				return nil, fmt.Errorf("local: unsupported identity type %T in %s", id, p.IdentityPath)
+		migrated, migrateErr := p.migrateLegacyIdentity()
+		if migrateErr != nil {
+			return nil, migrateErr
+		}
+		if !migrated {
+			id, err := age.GenerateX25519Identity()
+			if err != nil {
+				return nil, fmt.Errorf("local: generate identity: %w", err)
 			}
-			ids = append(ids, x)
+			if err := os.MkdirAll(filepath.Dir(p.IdentityPath), 0o700); err != nil {
+				return nil, fmt.Errorf("local: create identity dir: %w", err)
+			}
+			if err := os.WriteFile(p.IdentityPath, []byte(id.String()+"\n"), 0o600); err != nil {
+				return nil, fmt.Errorf("local: write identities: %w", err)
+			}
+			return []*age.X25519Identity{id}, nil
 		}
-		if len(ids) == 0 {
-			return nil, fmt.Errorf("local: %s contains no identities", p.IdentityPath)
+		data, err = os.ReadFile(p.IdentityPath)
+		if err != nil {
+			return nil, fmt.Errorf("local: read identities: %w", err)
 		}
-		return ids, nil
-	}
-	if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("local: read identities: %w", err)
 	}
 
-	id, err := age.GenerateX25519Identity()
+	parsed, err := age.ParseIdentities(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("local: generate identity: %w", err)
+		return nil, fmt.Errorf("local: parse identities: %w", err)
+	}
+	ids := make([]*age.X25519Identity, 0, len(parsed))
+	for _, id := range parsed {
+		x, ok := id.(*age.X25519Identity)
+		if !ok {
+			return nil, fmt.Errorf("local: unsupported identity type %T in %s", id, p.IdentityPath)
+		}
+		ids = append(ids, x)
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("local: %s contains no identities", p.IdentityPath)
+	}
+	return ids, nil
+}
+
+// migrateLegacyIdentity copies a pre-rename identity.txt sibling of
+// p.IdentityPath (if one exists) into p.IdentityPath, so upgrading past
+// the identity.txt -> identities rename doesn't orphan an existing
+// private key. Returns false, nil if no legacy file exists.
+func (p *Provider) migrateLegacyIdentity() (bool, error) {
+	legacyPath := filepath.Join(filepath.Dir(p.IdentityPath), "identity.txt")
+	data, err := os.ReadFile(legacyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("local: read legacy identity: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(p.IdentityPath), 0o700); err != nil {
-		return nil, fmt.Errorf("local: create identity dir: %w", err)
+		return false, fmt.Errorf("local: create identity dir: %w", err)
 	}
-	if err := os.WriteFile(p.IdentityPath, []byte(id.String()+"\n"), 0o600); err != nil {
-		return nil, fmt.Errorf("local: write identities: %w", err)
+	if err := os.WriteFile(p.IdentityPath, data, 0o600); err != nil {
+		return false, fmt.Errorf("local: migrate legacy identity: %w", err)
 	}
-	return []*age.X25519Identity{id}, nil
+	return true, nil
 }
