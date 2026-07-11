@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -150,4 +151,27 @@ func TestOpen_TamperedMacFails(t *testing.T) {
 
 	err = v.Open(path)
 	require.ErrorContains(t, err, "mac mismatch")
+}
+
+func TestSealStream_AlreadySealed_PassesThrough(t *testing.T) {
+	v, recipients := newTestVault(t)
+
+	plaintext := "database:\n  password: hunter2\n"
+	var sealed bytes.Buffer
+	require.NoError(t, v.SealStream(&sealed, strings.NewReader(plaintext), FormatYAML, recipients))
+
+	var out bytes.Buffer
+	require.NoError(t, v.SealStream(&out, bytes.NewReader(sealed.Bytes()), FormatYAML, recipients))
+
+	require.Equal(t, sealed.Bytes(), out.Bytes())
+}
+
+func TestOpenStream_AlreadyPlain_PassesThrough(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	plaintext := "database:\n  password: hunter2\n"
+	var out bytes.Buffer
+	require.NoError(t, v.OpenStream(&out, strings.NewReader(plaintext), FormatYAML))
+
+	require.Equal(t, plaintext, out.String())
 }
