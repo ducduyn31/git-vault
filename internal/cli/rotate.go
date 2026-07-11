@@ -7,6 +7,7 @@ import (
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -16,8 +17,11 @@ import (
 
 // newRotateCmd re-seals every tracked file under fresh key material for
 // the repo's *current* provider — unlike migrate, the provider name never
-// changes, so .git-vault.yaml is never rewritten. See
-// docs/superpowers/specs/2026-07-11-provider-key-rotation-design.md.
+// changes. For every provider except azurekms, .git-vault.yaml is never
+// rewritten either; azurekms is the one exception, since its key URL is
+// pinned to a specific Key Vault key version (see its case below). See
+// docs/superpowers/specs/2026-07-11-provider-key-rotation-design.md and
+// docs/superpowers/specs/2026-07-12-azurekms-provider-design.md.
 func newRotateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rotate",
@@ -76,6 +80,24 @@ func newRotateCmd() *cobra.Command {
 					return fmt.Errorf("git vault rotate: %w", err)
 				}
 				oldVault = newVault
+			case azurekms.Name:
+				// Azure Key Vault key URLs are version-pinned (unlike GCP's
+				// resource ID), so if the key was rotated in Azure since
+				// install or the last rotation, cfg.KeyResourceID may still
+				// point at a stale version. Re-resolve to the vault's
+				// current version first and persist it below, so re-sealing
+				// actually moves every file onto that version instead of
+				// re-encrypting under the old one.
+				resolved, err := azurekms.New().CurrentVersionURL(cmd.Context(), cfg.KeyResourceID)
+				if err != nil {
+					return fmt.Errorf("git vault rotate: %w", err)
+				}
+				cfg.KeyResourceID = resolved
+				newVault, newRecipients, err = vaultForProvider(cfg)
+				if err != nil {
+					return fmt.Errorf("git vault rotate: %w", err)
+				}
+				oldVault = newVault
 			default:
 				return fmt.Errorf("git vault rotate: rotation not supported for provider %q", cfg.Provider)
 			}
@@ -83,6 +105,12 @@ func newRotateCmd() *cobra.Command {
 			n, err := resealTracked(oldVault, newVault, newRecipients)
 			if err != nil {
 				return fmt.Errorf("git vault rotate: %w", err)
+			}
+
+			if cfg.Provider == azurekms.Name {
+				if err := config.Save(config.DefaultFileName, cfg); err != nil {
+					return fmt.Errorf("git vault rotate: write %s: %w", config.DefaultFileName, err)
+				}
 			}
 
 			var followUp string
@@ -93,6 +121,8 @@ func newRotateCmd() *cobra.Command {
 				followUp = "Distribute the new passphrase to your team out-of-band, and keep GIT_VAULT_PASSPHRASE set to the old value followed by the new value (one per line) until everyone has migrated — then the old line can be dropped."
 			case gcpkms.Name:
 				followUp = "Old KMS key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable or destroy the old version(s) in GCP to complete the rotation."
+			case azurekms.Name:
+				followUp = "Old Key Vault key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable the old version in Azure to complete the rotation."
 			}
 			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
 				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.",

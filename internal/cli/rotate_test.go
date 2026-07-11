@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -189,4 +191,48 @@ func TestRotateCmd_GCPKMS_RoundTrip(t *testing.T) {
 	opened, err := os.ReadFile("secret.yaml")
 	require.NoError(t, err)
 	require.Equal(t, original, string(opened))
+}
+
+func TestRotateCmd_AzureKMS_ReResolvesVersionAndRoundTrips(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	// The fake reports "v2" as current, simulating a key that was
+	// rotated in Azure (out-of-band) since the file was originally
+	// sealed under "v1".
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v2")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/test-key/v1",
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.NotEqual(t, string(sealedBefore), string(sealedAfter), "rotate must force a fresh Key Vault Encrypt call")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, "https://test.vault.azure.net/keys/test-key/v2", cfg.KeyResourceID, "rotate must persist the re-resolved current version")
+
+	decryptCmd2 := NewRootCmd()
+	decryptCmd2.SetOut(&bytes.Buffer{})
+	decryptCmd2.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd2.Execute())
+
+	opened2, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened2))
 }
