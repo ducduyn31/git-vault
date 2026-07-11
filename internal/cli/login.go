@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 )
 
@@ -50,6 +51,16 @@ func newLoginCmd() *cobra.Command {
 					return fmt.Errorf("git vault login: %w", err)
 				}
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "AWS KMS round trip succeeded — this machine is authorized.")
+				return err
+			case azurekms.Name:
+				err = verifyAzureKMSRoundTrip(cmd.Context(), cfg.KeyResourceID)
+				if errors.Is(err, azurekms.ErrNoCredentials) && attemptAzLogin(cmd, cfg.AutoLogin) {
+					err = verifyAzureKMSRoundTrip(cmd.Context(), cfg.KeyResourceID)
+				}
+				if err != nil {
+					return fmt.Errorf("git vault login: %w", err)
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Azure Key Vault round trip succeeded — this machine is authorized.")
 				return err
 			default:
 				return fmt.Errorf("git vault login: provider %q does not use git vault login", cfg.Provider)
@@ -127,6 +138,34 @@ func attemptAWSSSOLogin(cmd *cobra.Command, awsProfile string, autoLogin bool) b
 	return awsCmd.Run() == nil
 }
 
+// attemptAzLogin tries to fix a missing-credentials failure
+// (azurekms.ErrNoCredentials) by running `az login` — the one azurekms
+// failure mode `login`/`install` can actually fix instead of just
+// diagnosing. Mirrors attemptGcloudLogin's confirm-before-exec shape
+// exactly, including the autoLogin (config.Config.AutoLogin) opt-out.
+func attemptAzLogin(cmd *cobra.Command, autoLogin bool) bool {
+	path, err := exec.LookPath("az")
+	if err != nil {
+		return false
+	}
+
+	if !autoLogin {
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), "No Azure credentials found. Run `az login` now? [y/N] "); err != nil {
+			return false
+		}
+		line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+			return false
+		}
+	}
+
+	azCmd := exec.CommandContext(cmd.Context(), path, "login")
+	azCmd.Stdin = cmd.InOrStdin()
+	azCmd.Stdout = cmd.OutOrStdout()
+	azCmd.Stderr = cmd.ErrOrStderr()
+	return azCmd.Run() == nil
+}
+
 // verifyGCPKMSRoundTrip encrypts and decrypts a fixed probe value against
 // keyResourceID, returning an error (from gcpkms.Provider — see its
 // friendlyLoginErr) if ADC is missing, IAM denies access, or the resource
@@ -163,6 +202,24 @@ func verifyAWSKMSRoundTrip(ctx context.Context, keyResourceID, awsProfile string
 	}
 	if string(plaintext) != loginProbe {
 		return fmt.Errorf("awskms: round trip returned unexpected plaintext")
+	}
+	return nil
+}
+
+// verifyAzureKMSRoundTrip is verifyGCPKMSRoundTrip's Azure Key Vault
+// equivalent — see its doc comment.
+func verifyAzureKMSRoundTrip(ctx context.Context, keyResourceID string) error {
+	provider := azurekms.New()
+	ciphertext, err := provider.Encrypt(ctx, keyResourceID, []byte(loginProbe))
+	if err != nil {
+		return err
+	}
+	plaintext, err := provider.Decrypt(ctx, keyResourceID, ciphertext)
+	if err != nil {
+		return err
+	}
+	if string(plaintext) != loginProbe {
+		return fmt.Errorf("azurekms: round trip returned unexpected plaintext")
 	}
 	return nil
 }

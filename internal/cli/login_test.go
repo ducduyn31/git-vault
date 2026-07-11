@@ -15,6 +15,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -172,6 +174,38 @@ func TestLoginCmd_AWSKMS_FailsWithoutReachableKMS(t *testing.T) {
 	require.Error(t, cmd.Execute())
 }
 
+func TestLoginCmd_AzureKMS_Succeeds(t *testing.T) {
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/test-key/v1",
+	}))
+
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"login"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "authorized")
+}
+
+func TestLoginCmd_AzureKMS_FailsWithoutReachableVault(t *testing.T) {
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "not-a-valid-url",
+	}))
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"login"})
+	require.Error(t, cmd.Execute())
+}
+
 func fakeAwsCLI(t *testing.T, exitCode int) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -179,6 +213,18 @@ func fakeAwsCLI(t *testing.T, exitCode int) {
 	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "aws")
+	contents := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	require.NoError(t, os.WriteFile(script, []byte(contents), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func fakeAzCLI(t *testing.T, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake az script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "az")
 	contents := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
 	require.NoError(t, os.WriteFile(script, []byte(contents), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -228,4 +274,43 @@ func TestAttemptAWSSSOLogin_IncludesProfileInPrompt(t *testing.T) {
 	out := &bytes.Buffer{}
 	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "team-sso", false))
 	require.Contains(t, out.String(), "aws sso login --profile team-sso")
+}
+
+func TestAttemptAzLogin_NoAzCLIOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptAzLogin_Declined(t *testing.T) {
+	fakeAzCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.Contains(t, out.String(), "Run `az login` now?")
+}
+
+func TestAttemptAzLogin_ConfirmedAndCLISucceeds(t *testing.T) {
+	fakeAzCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptAzLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+}
+
+func TestAttemptAzLogin_ConfirmedButCLIFails(t *testing.T) {
+	fakeAzCLI(t, 1)
+	out := &bytes.Buffer{}
+	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+}
+
+func TestAttemptAzLogin_AutoLoginSkipsPrompt(t *testing.T) {
+	fakeAzCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptAzLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptAzLogin_AutoLoginStillNeedsCLI(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString(""), out), true))
 }

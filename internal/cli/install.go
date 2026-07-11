@@ -9,6 +9,7 @@ import (
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/ui"
@@ -41,7 +42,7 @@ func newInstallCmd() *cobra.Command {
 				return err
 			}
 
-			if (providerName == gcpkms.Name || providerName == awskms.Name) && keyResourceID == "" {
+			if (providerName == gcpkms.Name || providerName == awskms.Name || providerName == azurekms.Name) && keyResourceID == "" {
 				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", providerName)
 			}
 
@@ -72,6 +73,14 @@ func newInstallCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("git vault install: %w", err)
 				}
+			case azurekms.Name:
+				err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
+				if errors.Is(err, azurekms.ErrNoCredentials) && attemptAzLogin(cmd, autoLogin) {
+					err = verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
+				}
+				if err != nil {
+					return fmt.Errorf("git vault install: %w", err)
+				}
 			}
 
 			settings := []struct{ key, value string }{
@@ -98,10 +107,10 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
-	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms, awskms)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID or AWS KMS ARN (required when --provider gcpkms or awskms)")
+	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms, awskms, azurekms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, or Azure Key Vault key URL (required when --provider gcpkms, awskms, or azurekms)")
 	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
-	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, awskms)")
+	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, awskms, azurekms)")
 	return cmd
 }
 

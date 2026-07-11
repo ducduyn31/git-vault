@@ -17,11 +17,12 @@ plaintext only ever touches disk in your working tree, never in git history.
 
 **Status:** early — encrypt/decrypt, the clean/smudge filter, status
 reporting, key rotation, and cross-provider migration all work today.
-GCP KMS and AWS KMS are available as team key-sharing providers,
-authorized through your org's existing Google Workspace or AWS IAM
-Identity Center SSO — see [docs/gcpkms-provider.md](docs/gcpkms-provider.md)
-and [docs/awskms-provider.md](docs/awskms-provider.md). Azure is on the
-roadmap.
+GCP KMS, AWS KMS, and Azure Key Vault are all available as team
+key-sharing providers, authorized through your org's existing Google
+Workspace, AWS IAM Identity Center, or Microsoft Entra ID SSO — see
+[docs/gcpkms-provider.md](docs/gcpkms-provider.md),
+[docs/awskms-provider.md](docs/awskms-provider.md), and
+[docs/azurekms-provider.md](docs/azurekms-provider.md).
 
 ## Configure git-vault in a project
 
@@ -74,9 +75,11 @@ git vault decrypt secrets/prod.yaml
 
 For a shared key backed by your org's existing SSO (rather than a local
 per-machine key or an out-of-band passphrase), see
-[docs/gcpkms-provider.md](docs/gcpkms-provider.md) (Google Workspace SSO)
-or [docs/awskms-provider.md](docs/awskms-provider.md) (AWS IAM Identity
-Center / SSO).
+[docs/gcpkms-provider.md](docs/gcpkms-provider.md) (Google Workspace
+SSO), [docs/awskms-provider.md](docs/awskms-provider.md) (AWS IAM
+Identity Center / SSO), or
+[docs/azurekms-provider.md](docs/azurekms-provider.md) (Microsoft Entra
+ID / `az login`).
 
 ## Development
 
