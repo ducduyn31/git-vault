@@ -40,6 +40,9 @@ func newLocalVault() (*vault.Vault, []string, error) {
 // string.
 func newPassphraseVault() (*vault.Vault, []string, error) {
 	provider := passphrase.New()
+	if err := provider.Ready(); err != nil {
+		return nil, nil, err
+	}
 
 	registry := keyservice.NewRegistry()
 	if err := registry.Register(provider); err != nil {

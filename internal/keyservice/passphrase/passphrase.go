@@ -125,6 +125,17 @@ func PromptNewSecret(out io.Writer) (string, error) {
 
 func (p *Provider) Name() string { return Name }
 
+// Ready resolves and caches the provider's secret now (env var, cached
+// prompt, or a fresh interactive prompt) instead of waiting for the first
+// Encrypt/Decrypt call. Callers that seal/open several files in one
+// command (e.g. migrate) need this: without it, a missing secret would
+// only surface after earlier files in the batch were already rewritten,
+// leaving them decrypted on disk.
+func (p *Provider) Ready() error {
+	_, err := p.lookup()
+	return err
+}
+
 // Encrypt encrypts plaintext (a sops data key) using real age scrypt
 // encryption, armored (see armor.NewWriter below) so the result is safe
 // to store as a string inside a YAML/JSON document — raw binary age

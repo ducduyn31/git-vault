@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 
 	"github.com/spf13/cobra"
@@ -10,7 +9,6 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
-	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
 func newInstallCmd() *cobra.Command {
@@ -32,9 +30,6 @@ func newInstallCmd() *cobra.Command {
 				return err
 			}
 
-			if providerName == passphrase.Name && os.Getenv(passphrase.EnvVar) == "" {
-				return fmt.Errorf("git vault install: %s not set", passphrase.EnvVar)
-			}
 			if providerName == gcpkms.Name && keyResourceID == "" {
 				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", gcpkms.Name)
 			}
