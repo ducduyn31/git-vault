@@ -338,6 +338,8 @@ func TestFormatForPath(t *testing.T) {
 		{"key.pem", FormatBinary},
 		{"noextension", FormatBinary},
 		{"backup.env.old/config.yaml", FormatYAML},
+		{"config.env.json", FormatJSON},
+		{"secrets.env.yaml", FormatYAML},
 	}
 
 	for _, c := range cases {
@@ -405,12 +407,12 @@ const (
 func FormatForPath(path string) Format {
 	base := filepath.Base(path)
 	switch {
-	case strings.HasSuffix(base, ".env") || strings.Contains(base, ".env."):
-		return FormatDotenv
 	case strings.HasSuffix(base, ".json"):
 		return FormatJSON
 	case strings.HasSuffix(base, ".yaml"), strings.HasSuffix(base, ".yml"):
 		return FormatYAML
+	case strings.HasSuffix(base, ".env") || strings.Contains(base, ".env."):
+		return FormatDotenv
 	default:
 		return FormatBinary
 	}

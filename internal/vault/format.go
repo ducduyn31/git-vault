@@ -37,12 +37,12 @@ const (
 func FormatForPath(path string) Format {
 	base := filepath.Base(path)
 	switch {
-	case strings.HasSuffix(base, ".env") || strings.Contains(base, ".env."):
-		return FormatDotenv
 	case strings.HasSuffix(base, ".json"):
 		return FormatJSON
 	case strings.HasSuffix(base, ".yaml"), strings.HasSuffix(base, ".yml"):
 		return FormatYAML
+	case strings.HasSuffix(base, ".env") || strings.Contains(base, ".env."):
+		return FormatDotenv
 	default:
 		return FormatBinary
 	}

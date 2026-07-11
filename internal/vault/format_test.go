@@ -17,6 +17,8 @@ func TestFormatForPath(t *testing.T) {
 		{"key.pem", FormatBinary},
 		{"noextension", FormatBinary},
 		{"backup.env.old/config.yaml", FormatYAML},
+		{"config.env.json", FormatJSON},
+		{"secrets.env.yaml", FormatYAML},
 	}
 
 	for _, c := range cases {
