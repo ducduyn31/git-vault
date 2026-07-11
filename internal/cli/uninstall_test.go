@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,7 +91,7 @@ func TestUninstallCmd_PurgeKeys_RemovesLocalIdentitiesAndSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, session.Save(sessionPath, session.Session{Provider: local.Name}))
 
-	runUninstallWithArgs(t, "--purge-keys")
+	runUninstallWithArgs(t, "--purge-keys", "--force")
 
 	_, err = os.Stat(provider.IdentityPath)
 	require.True(t, os.IsNotExist(err), "local identity file must be removed by --purge-keys")
@@ -183,4 +184,88 @@ func TestUninstallCmd_PurgeAttrs_StillWarnsAboutPlaintextFile(t *testing.T) {
 	got, err := os.ReadFile(".gitattributes")
 	require.NoError(t, err)
 	require.NotContains(t, string(got), "filter=git-vault")
+}
+
+func TestUninstallCmd_PurgeKeys_DeclineAbortsBeforeAnyMutation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+	provider, err := local.New()
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetIn(strings.NewReader("n\n"))
+	cmd.SetArgs([]string{"uninstall", "--purge-keys"})
+	require.Error(t, cmd.Execute())
+
+	require.Equal(t, "git-vault clean %f", gitConfigGet(t, false, "filter.git-vault.clean"))
+	_, statErr := os.Stat(provider.IdentityPath)
+	require.NoError(t, statErr, "local identity must survive a declined --purge-keys")
+}
+
+func TestUninstallCmd_PurgeKeys_ConfirmYes_Deletes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+	provider, err := local.New()
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetArgs([]string{"uninstall", "--purge-keys"})
+	require.NoError(t, cmd.Execute())
+
+	_, statErr := os.Stat(provider.IdentityPath)
+	require.True(t, os.IsNotExist(statErr))
+}
+
+func TestUninstallCmd_PurgeKeys_SpecificWarningNamesSealedFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetIn(strings.NewReader("n\n"))
+	cmd.SetArgs([]string{"uninstall", "--purge-keys"})
+	require.Error(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "secret.yaml")
+	require.Contains(t, out.String(), "permanently unreadable")
+}
+
+func TestUninstallCmd_PurgeKeys_GenericWarningWhenNoSealedLocalFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetIn(strings.NewReader("n\n"))
+	cmd.SetArgs([]string{"uninstall", "--purge-keys"})
+	require.Error(t, cmd.Execute())
+
+	require.NotContains(t, out.String(), "secret.yaml")
+	require.Contains(t, out.String(), "This deletes git-vault's local key material")
+}
+
+func TestUninstallCmd_PurgeKeysAndPurgeConfig_StillShowsSpecificWarning(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetArgs([]string{"uninstall", "--purge-keys", "--purge-config"})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "secret.yaml")
+	_, err := os.Stat(config.DefaultFileName)
+	require.True(t, os.IsNotExist(err))
 }

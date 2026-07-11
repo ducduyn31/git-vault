@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,28 +31,40 @@ func newUninstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			purgeKeys, err := cmd.Flags().GetBool("purge-keys")
-			if err != nil {
-				return err
-			}
 			purgeAttrs, err := cmd.Flags().GetBool("purge-attrs")
 			if err != nil {
 				return err
 			}
+			purgeKeys, err := cmd.Flags().GetBool("purge-keys")
+			if err != nil {
+				return err
+			}
+			force, err := cmd.Flags().GetBool("force")
+			if err != nil {
+				return err
+			}
 
-			_, plaintext, err := trackedFileStates()
+			sealed, plaintext, err := trackedFileStates()
 			if err != nil {
 				return fmt.Errorf("git vault uninstall: %w", err)
 			}
 
-			for _, key := range []string{"filter.git-vault.clean", "filter.git-vault.smudge", "filter.git-vault.required"} {
-				if err := unsetGitConfig(global, key); err != nil {
+			if purgeKeys {
+				var sealedForPrompt []string
+				if cfg, cfgErr := config.Load(config.DefaultFileName); cfgErr == nil && cfg.Provider == local.Name {
+					sealedForPrompt = sealed
+				}
+				confirmed, err := confirmPurgeKeys(cmd.OutOrStdout(), cmd.InOrStdin(), force, sealedForPrompt)
+				if err != nil {
 					return fmt.Errorf("git vault uninstall: %w", err)
+				}
+				if !confirmed {
+					return fmt.Errorf("git vault uninstall: aborted, --purge-keys declined")
 				}
 			}
 
-			if purgeConfig {
-				if err := removeIfExists(config.DefaultFileName); err != nil {
+			for _, key := range []string{"filter.git-vault.clean", "filter.git-vault.smudge", "filter.git-vault.required"} {
+				if err := unsetGitConfig(global, key); err != nil {
 					return fmt.Errorf("git vault uninstall: %w", err)
 				}
 			}
@@ -62,6 +77,12 @@ func newUninstallCmd() *cobra.Command {
 
 			if purgeAttrs {
 				if err := gitattr.Untrack(".gitattributes"); err != nil {
+					return fmt.Errorf("git vault uninstall: %w", err)
+				}
+			}
+
+			if purgeConfig {
+				if err := removeIfExists(config.DefaultFileName); err != nil {
 					return fmt.Errorf("git vault uninstall: %w", err)
 				}
 			}
@@ -92,9 +113,44 @@ func newUninstallCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool("global", false, "unregister the filter driver from the user's global git config")
 	cmd.Flags().Bool("purge-config", false, "also remove "+config.DefaultFileName)
-	cmd.Flags().Bool("purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
 	cmd.Flags().Bool("purge-attrs", false, "also remove git-vault's filter lines from .gitattributes")
+	cmd.Flags().Bool("purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
+	cmd.Flags().Bool("force", false, "skip the --purge-keys confirmation prompt")
 	return cmd
+}
+
+// confirmPurgeKeys prompts on out/in unless force is set, naming sealed
+// (files currently encrypted under the local provider) when known, or a
+// generic irreversibility warning otherwise. Returns whether to proceed.
+func confirmPurgeKeys(out io.Writer, in io.Reader, force bool, sealed []string) (bool, error) {
+	if force {
+		return true, nil
+	}
+
+	if len(sealed) > 0 {
+		if _, err := fmt.Fprintf(out, "The following %d file(s) appear to be encrypted with the local key about to be deleted:\n", len(sealed)); err != nil {
+			return false, err
+		}
+		for _, f := range sealed {
+			if _, err := fmt.Fprintf(out, "  %s\n", f); err != nil {
+				return false, err
+			}
+		}
+		if _, err := fmt.Fprintln(out, "They will become permanently unreadable unless you have a backup of the key."); err != nil {
+			return false, err
+		}
+	} else {
+		if _, err := fmt.Fprintln(out, "This deletes git-vault's local key material and cached session for this machine."); err != nil {
+			return false, err
+		}
+	}
+	if _, err := fmt.Fprint(out, "This is irreversible. Continue? [y/N] "); err != nil {
+		return false, err
+	}
+
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }
 
 // trackedFileStates enumerates git-vault-tracked files the same way
