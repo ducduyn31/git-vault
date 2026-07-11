@@ -87,3 +87,42 @@ func TestEncryptCmd_MissingConfigFails(t *testing.T) {
 	err := encryptCmd.Execute()
 	require.ErrorContains(t, err, "git vault install")
 }
+
+func TestEncryptCmd_PrintsConfirmation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+
+	path := "secret.yaml"
+	require.NoError(t, os.WriteFile(path, []byte("password: hunter2\n"), 0o644))
+
+	encryptCmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	encryptCmd.SetOut(out)
+	encryptCmd.SetArgs([]string{"encrypt", path})
+	require.NoError(t, encryptCmd.Execute())
+
+	require.Contains(t, out.String(), "Sealed secret.yaml")
+}
+
+func TestDecryptCmd_PrintsConfirmation(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+
+	path := "secret.yaml"
+	require.NoError(t, os.WriteFile(path, []byte("password: hunter2\n"), 0o644))
+
+	encryptCmd := NewRootCmd()
+	encryptCmd.SetOut(&bytes.Buffer{})
+	encryptCmd.SetArgs([]string{"encrypt", path})
+	require.NoError(t, encryptCmd.Execute())
+
+	decryptCmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	decryptCmd.SetOut(out)
+	decryptCmd.SetArgs([]string{"decrypt", path})
+	require.NoError(t, decryptCmd.Execute())
+
+	require.Contains(t, out.String(), "Opened secret.yaml")
+}

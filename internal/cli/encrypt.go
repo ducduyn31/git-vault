@@ -1,6 +1,12 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/ducduyn31/git-vault/internal/ui"
+)
 
 func newEncryptCmd() *cobra.Command {
 	return &cobra.Command{
@@ -12,7 +18,11 @@ func newEncryptCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return v.Seal(args[0], recipients)
+			if err := v.Seal(args[0], recipients); err != nil {
+				return err
+			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Sealed %s", args[0]))
+			return nil
 		},
 	}
 }

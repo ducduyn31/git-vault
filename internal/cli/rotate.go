@@ -11,6 +11,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
+	"github.com/ducduyn31/git-vault/internal/ui"
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
@@ -110,12 +111,9 @@ func newRotateCmd() *cobra.Command {
 			case gcpkms.Name:
 				followUp = "Old KMS key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable or destroy the old version(s) in GCP to complete the rotation."
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(),
-				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.\n",
-				len(files), cfg.Provider, followUp)
-			if err != nil {
-				return fmt.Errorf("git vault rotate: print summary: %w", err)
-			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
+				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.",
+				len(files), cfg.Provider, followUp))
 			return nil
 		},
 	}
