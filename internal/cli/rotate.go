@@ -8,6 +8,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -77,6 +78,19 @@ func newRotateCmd() *cobra.Command {
 					return fmt.Errorf("git vault rotate: %w", err)
 				}
 				oldVault = newVault
+			case awskms.Name:
+				// The ARN never changes across an AWS-side rotation, and
+				// AWS KMS's automatic annual rotation is fully transparent
+				// — there is no "current version" exposed to target the
+				// way GCP's key versions are. Re-sealing every file still
+				// forces a fresh KMS Encrypt call; it just doesn't let old
+				// backing material be individually retired afterward the
+				// way gcpkms's case does.
+				newVault, newRecipients, err = vaultForProvider(cfg)
+				if err != nil {
+					return fmt.Errorf("git vault rotate: %w", err)
+				}
+				oldVault = newVault
 			default:
 				return fmt.Errorf("git vault rotate: rotation not supported for provider %q", cfg.Provider)
 			}
@@ -110,6 +124,8 @@ func newRotateCmd() *cobra.Command {
 				followUp = "Distribute the new passphrase to your team out-of-band, and keep GIT_VAULT_PASSPHRASE set to the old value followed by the new value (one per line) until everyone has migrated — then the old line can be dropped."
 			case gcpkms.Name:
 				followUp = "Old KMS key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable or destroy the old version(s) in GCP to complete the rotation."
+			case awskms.Name:
+				followUp = "AWS KMS rotates its backing key material automatically and transparently — unlike GCP, there is no old version to disable or destroy afterward; this re-encryption is defense-in-depth only. To actually retire a compromised key, use `git vault migrate` to a different KMS key instead."
 			}
 			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
 				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.",
