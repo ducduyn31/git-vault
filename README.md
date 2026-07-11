@@ -51,8 +51,8 @@ material and cached session. `--purge-keys` prompts for confirmation first
 (skip it with `--force`), since deleting the key makes anything only it can
 decrypt permanently unreadable. Unregistering the filter driver also makes
 `.gitattributes`' filter lines inert, so `uninstall` warns if any tracked
-file is currently plaintext in your working tree — commit it before
-reinstalling, or it'll go into history unencrypted.
+file is currently plaintext in your working tree — reinstall before staging
+it, or handle it manually, or it'll be committed as plaintext to history.
 
 Check what's tracked and its current encryption state at any time:
 
