@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -160,4 +162,61 @@ func setupTrackedEncryptedFile(t *testing.T, provider string) string {
 	require.NoError(t, encryptCmd.Execute())
 
 	return original
+}
+
+func TestInstallCmd_GCPKMS_WritesConfigAndValidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	opts, cleanup, err := gcpkmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := gcpkms.SetClientOptionsForTesting(opts)
+	defer restore()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"install", "--provider=" + gcpkms.Name,
+		"--key-resource-id=projects/test/locations/global/keyRings/test/cryptoKeys/test",
+	})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "Recipient: gcpkms:projects/test/locations/global/keyRings/test/cryptoKeys/test")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, gcpkms.Name, cfg.Provider)
+	require.Equal(t, "projects/test/locations/global/keyRings/test/cryptoKeys/test", cfg.KeyResourceID)
+}
+
+func TestInstallCmd_GCPKMS_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--provider=" + gcpkms.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestInstallCmd_GCPKMS_FailsWithoutReachableKMS(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"install", "--provider=" + gcpkms.Name,
+		"--key-resource-id=projects/test/locations/global/keyRings/test/cryptoKeys/test",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+
+	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
+	require.Error(t, gitErr, "git config must not be set when install fails the KMS round trip")
 }
