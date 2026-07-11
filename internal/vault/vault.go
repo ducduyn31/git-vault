@@ -27,14 +27,12 @@ import (
 // with the github.com/getsops/sops/v3 version pinned in go.mod.
 const sopsVersion = "3.13.2"
 
-// Vault seals/opens files using sops, dispatching key operations to
-// git-vault's own keyservice.Server in-process via
-// sopskeyservice.NewCustomLocalClient.
+// Vault seals/opens files using sops, dispatching key operations to a
+// keyservice.Server in-process via sopskeyservice.NewCustomLocalClient.
 type Vault struct {
 	clients []sopskeyservice.KeyServiceClient
 }
 
-// New returns a Vault that dispatches key operations to server in-process.
 func New(server *keyservice.Server) *Vault {
 	return &Vault{
 		clients: []sopskeyservice.KeyServiceClient{sopskeyservice.NewCustomLocalClient(server)},
