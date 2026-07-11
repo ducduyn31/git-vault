@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/session"
 )
@@ -30,6 +31,10 @@ func newUninstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			purgeAttrs, err := cmd.Flags().GetBool("purge-attrs")
+			if err != nil {
+				return err
+			}
 
 			for _, key := range []string{"filter.git-vault.clean", "filter.git-vault.smudge", "filter.git-vault.required"} {
 				if err := unsetGitConfig(global, key); err != nil {
@@ -49,6 +54,12 @@ func newUninstallCmd() *cobra.Command {
 				}
 			}
 
+			if purgeAttrs {
+				if err := gitattr.Untrack(".gitattributes"); err != nil {
+					return fmt.Errorf("git vault uninstall: %w", err)
+				}
+			}
+
 			scope := "repo"
 			if global {
 				scope = "global"
@@ -62,6 +73,7 @@ func newUninstallCmd() *cobra.Command {
 	cmd.Flags().Bool("global", false, "unregister the filter driver from the user's global git config")
 	cmd.Flags().Bool("purge-config", false, "also remove "+config.DefaultFileName)
 	cmd.Flags().Bool("purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
+	cmd.Flags().Bool("purge-attrs", false, "also remove git-vault's filter lines from .gitattributes")
 	return cmd
 }
 

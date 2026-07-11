@@ -97,3 +97,17 @@ func TestUninstallCmd_PurgeKeys_RemovesLocalIdentitiesAndSession(t *testing.T) {
 	_, err = os.Stat(sessionPath)
 	require.True(t, os.IsNotExist(err), "session cache must be removed by --purge-keys")
 }
+
+func TestUninstallCmd_PurgeAttrs_StripsGitVaultLinesOnly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+	require.NoError(t, os.WriteFile(".gitattributes", []byte("*.bin binary\n"), 0o644))
+	require.NoError(t, gitattr.Track(".gitattributes", "secret.yaml"))
+
+	runUninstallWithArgs(t, "--purge-attrs")
+
+	got, err := os.ReadFile(".gitattributes")
+	require.NoError(t, err)
+	require.Equal(t, "*.bin binary\n", string(got))
+}
