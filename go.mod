@@ -3,6 +3,7 @@ module github.com/ducduyn31/git-vault
 go 1.26.4
 
 require (
+	filippo.io/age v1.3.1
 	github.com/getsops/sops/v3 v3.13.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -18,7 +19,6 @@ require (
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/kms v1.31.0 // indirect
 	cloud.google.com/go/longrunning v1.1.0 // indirect
-	filippo.io/age v1.3.1 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0 // indirect
