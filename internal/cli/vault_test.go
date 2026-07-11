@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
 func TestNewLocalVault_ReturnsVaultAndRecipient(t *testing.T) {
@@ -15,4 +18,36 @@ func TestNewLocalVault_ReturnsVaultAndRecipient(t *testing.T) {
 	require.NotNil(t, v)
 	require.Len(t, recipients, 1)
 	require.True(t, strings.HasPrefix(recipients[0], "local:"))
+}
+
+func TestVaultForProvider_Passphrase(t *testing.T) {
+	t.Setenv(passphrase.EnvVar, "correct horse battery staple")
+
+	v, recipients, err := vaultForProvider(passphrase.Name)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	require.Equal(t, []string{"passphrase:shared"}, recipients)
+}
+
+func TestVaultForProvider_UnknownProviderFails(t *testing.T) {
+	_, _, err := vaultForProvider("bogus")
+	require.ErrorContains(t, err, `unknown provider "bogus"`)
+}
+
+func TestNewVault_MissingConfigFails(t *testing.T) {
+	chdirTemp(t)
+
+	_, _, err := newVault()
+	require.ErrorContains(t, err, "git vault install")
+}
+
+func TestNewVault_ReadsProviderFromConfig(t *testing.T) {
+	chdirTemp(t)
+	t.Setenv(passphrase.EnvVar, "correct horse battery staple")
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: passphrase.Name}))
+
+	v, recipients, err := newVault()
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	require.Equal(t, []string{"passphrase:shared"}, recipients)
 }
