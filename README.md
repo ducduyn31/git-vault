@@ -45,9 +45,14 @@ immediately.
 `git vault uninstall` reverses `install`, unregistering the filter driver
 (add `--global` to match an `install --global`). It leaves `.git-vault.yaml`
 and `.gitattributes` untouched by default; add `--purge-config` to remove
-`.git-vault.yaml` too, or `--purge-keys` to also delete this machine's local
-key material and cached session — irreversible, since files only that key
-can open become permanently unreadable.
+`.git-vault.yaml`, `--purge-attrs` to strip git-vault's lines from
+`.gitattributes`, or `--purge-keys` to also delete this machine's local key
+material and cached session. `--purge-keys` prompts for confirmation first
+(skip it with `--force`), since deleting the key makes anything only it can
+decrypt permanently unreadable. Unregistering the filter driver also makes
+`.gitattributes`' filter lines inert, so `uninstall` warns if any tracked
+file is currently plaintext in your working tree — commit it before
+reinstalling, or it'll go into history unencrypted.
 
 Check what's tracked and its current encryption state at any time:
 
