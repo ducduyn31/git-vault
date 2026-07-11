@@ -283,6 +283,76 @@ func TestMigrateCmd_AzureKMSToAzureKMS_SameKeyFails(t *testing.T) {
 	require.ErrorContains(t, err, "identical to the current key")
 }
 
+func TestMigrateCmd_GCPKMSTarget_UnreachableKeyFailsBeforeResealing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	opts, cleanup, err := gcpkmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := gcpkms.SetClientOptionsForTesting(opts)
+	defer restore()
+
+	setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      gcpkms.Name,
+		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/key-a",
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + gcpkms.Name,
+		"--key-resource-id=not-a-valid-resource-id",
+	})
+	err = cmd.Execute()
+	require.Error(t, err)
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, "projects/test/locations/global/keyRings/test/cryptoKeys/key-a", cfg.KeyResourceID, "config must not change when migrate fails fast")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, string(sealedBefore), string(sealedAfter), "file must stay sealed under the old key when migrate fails fast on an unreachable target")
+}
+
+func TestMigrateCmd_AzureKMSTarget_UnreachableKeyFailsBeforeResealing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/key-a/v1",
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + azurekms.Name,
+		"--key-resource-id=https://test.vault.azure.net/keys/key-b", // no version
+	})
+	err = cmd.Execute()
+	require.Error(t, err)
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, "https://test.vault.azure.net/keys/key-a/v1", cfg.KeyResourceID, "config must not change when migrate fails fast")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, string(sealedBefore), string(sealedAfter), "file must stay sealed under the old key when migrate fails fast on an unreachable target")
+}
+
 func TestMigrateCmd_AzureKMSTarget_MissingKeyResourceIDFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	chdirTemp(t)
