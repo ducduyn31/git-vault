@@ -67,6 +67,21 @@ func DefaultIdentityPath() (string, error) {
 
 func (p *Provider) Name() string { return Name }
 
+// recipientString returns id's bech32 recipient encoding. age.Identity
+// doesn't expose Recipient() itself — only the concrete *X25519Identity
+// and *HybridIdentity types do, with different return types — so this
+// dispatches on the two concrete types local.go supports.
+func recipientString(id age.Identity) (string, error) {
+	switch v := id.(type) {
+	case *age.X25519Identity:
+		return v.Recipient().String(), nil
+	case *age.HybridIdentity:
+		return v.Recipient().String(), nil
+	default:
+		return "", fmt.Errorf("local: unsupported identity type %T", id)
+	}
+}
+
 // Recipient returns the newest stored identity's recipient — a bech32
 // age public key — generating a first identity if none are stored yet.
 func (p *Provider) Recipient() (string, error) {
@@ -74,7 +89,7 @@ func (p *Provider) Recipient() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return ids[len(ids)-1].Recipient().String(), nil
+	return recipientString(ids[len(ids)-1])
 }
 
 // Rotate generates a fresh identity, appends and durably persists it
@@ -144,9 +159,13 @@ func (p *Provider) Decrypt(_ context.Context, keyID string, ciphertext []byte) (
 	if err != nil {
 		return nil, err
 	}
-	var match *age.X25519Identity
+	var match age.Identity
 	for _, id := range ids {
-		if id.Recipient().String() == keyID {
+		s, err := recipientString(id)
+		if err != nil {
+			return nil, err
+		}
+		if s == keyID {
 			match = id
 			break
 		}
@@ -170,8 +189,9 @@ func (p *Provider) Decrypt(_ context.Context, keyID string, ciphertext []byte) (
 // identities loads every identity persisted at p.IdentityPath, migrating
 // forward a pre-rename identity.txt sibling if one exists (see
 // migrateLegacyIdentity), or generating and persisting a single fresh
-// identity if neither exists yet.
-func (p *Provider) identities() ([]*age.X25519Identity, error) {
+// identity if neither exists yet. The list may mix *age.X25519Identity
+// (pre-PQ) and *age.HybridIdentity (post-PQ) entries — see Rotate.
+func (p *Provider) identities() ([]age.Identity, error) {
 	data, err := os.ReadFile(p.IdentityPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -192,7 +212,7 @@ func (p *Provider) identities() ([]*age.X25519Identity, error) {
 			if err := os.WriteFile(p.IdentityPath, []byte(id.String()+"\n"), 0o600); err != nil {
 				return nil, fmt.Errorf("local: write identities: %w", err)
 			}
-			return []*age.X25519Identity{id}, nil
+			return []age.Identity{id}, nil
 		}
 		data, err = os.ReadFile(p.IdentityPath)
 		if err != nil {
@@ -200,17 +220,16 @@ func (p *Provider) identities() ([]*age.X25519Identity, error) {
 		}
 	}
 
-	parsed, err := age.ParseIdentities(bytes.NewReader(data))
+	ids, err := age.ParseIdentities(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("local: parse identities: %w", err)
 	}
-	ids := make([]*age.X25519Identity, 0, len(parsed))
-	for _, id := range parsed {
-		x, ok := id.(*age.X25519Identity)
-		if !ok {
+	for _, id := range ids {
+		switch id.(type) {
+		case *age.X25519Identity, *age.HybridIdentity:
+		default:
 			return nil, fmt.Errorf("local: unsupported identity type %T in %s", id, p.IdentityPath)
 		}
-		ids = append(ids, x)
 	}
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("local: %s contains no identities", p.IdentityPath)
