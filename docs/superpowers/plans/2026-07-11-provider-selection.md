@@ -26,7 +26,7 @@
 
 **Interfaces:**
 - Consumes: `local.New() (*local.Provider, error)`, `local.Name` (const `"local"`), `(*local.Provider).Recipient() (string, error)` — all already exist. `passphrase.New() passphrase.Provider`, `passphrase.Name` (const `"passphrase"`), `passphrase.KeyID` (const `"shared"`), `passphrase.EnvVar` (const `"GIT_VAULT_PASSPHRASE"`) — all already exist in `internal/keyservice/passphrase/passphrase.go`. `keyservice.NewRegistry()`, `(*keyservice.Registry).Register(keyservice.Provider) error`, `keyservice.NewServer(*keyservice.Registry) *keyservice.Server` — already exist. `config.Load(path string) (config.Config, error)`, `config.DefaultFileName` (const `".git-vault.yaml"`), `config.Config{Provider string}` — already exist in `internal/config/config.go`. `chdirTemp(t *testing.T)` — test helper already defined in `internal/cli/install_test.go`, same package.
-- Produces: `newPassphraseVault() (*vault.Vault, []string, error)`, `vaultForProvider(name string) (*vault.Vault, []string, error)`, `loadConfig() (config.Config, error)`, `newVault() (*vault.Vault, []string, error)` — Task 2 and Task 3 call `newVault()`; `vaultForProvider` is not consumed elsewhere in this plan but is kept as a separately-testable unit (see rationale below).
+- Produces: `newPassphraseVault() (*vault.Vault, []string, error)`, `vaultForProvider(name string) (*vault.Vault, []string, error)`, `loadConfig() (config.Config, error)`, `newVault() (*vault.Vault, []string, error)` — Task 3 calls `newVault()`; Task 2 (`install`) calls `vaultForProvider` directly, since it needs the recipient before any `.git-vault.yaml` exists to read.
 
 - [ ] **Step 1: Write the failing tests**
 
