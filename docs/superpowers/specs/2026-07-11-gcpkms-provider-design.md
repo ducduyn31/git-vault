@@ -50,10 +50,6 @@ the same `Provider` interface.
 - **No multi-region/multi-resource-ID support.** sops's `gcpkms` package
   already supports comma-separated resource IDs; nothing here blocks
   adding it later, but v1 is a single resource ID per repo.
-- **No `git vault rotate` support for gcpkms.** GCP's own automatic
-  CryptoKey rotation covers this; git-vault's rotate command explicitly
-  rejects the gcpkms provider with a message pointing at that feature,
-  rather than silently doing nothing.
 - **No shelling out to the `gcloud` CLI.** Consistent with using sops as
   a library rather than a subprocess, `git vault login` never execs
   `gcloud` — it verifies ADC directly via the Go client library and
@@ -87,6 +83,43 @@ encrypt / decrypt / clean / smudge
     internal/vault or the sops tree format.
 ```
 
+## Rotation (`git vault rotate`)
+
+GCP's automatic CryptoKey rotation is *passive*: it creates a new primary
+key version but never disables or destroys old ones, so already-committed
+ciphertext keeps decrypting under whichever version wrapped it. That's
+fine for availability, but it means old versions never actually retire —
+there's no point at which it's provably safe to disable/destroy one,
+which matters for anyone who needs to actually re-encrypt under a new key
+(crypto-shredding) rather than merely keep the old one reachable.
+
+`git vault rotate` closes that gap the same way it already does for
+`local`/`passphrase`: it re-seals every tracked file, which forces a
+fresh KMS `Encrypt` call (always serviced by the current primary version)
+for each one. `internal/cli/rotate.go`'s per-provider switch gets a new
+case:
+
+```go
+case gcpkms.Name:
+    // The resource ID never changes across a GCP-side rotation — only
+    // which key version is primary does, invisible to git-vault.
+    // Re-sealing every file forces a fresh KMS Encrypt call, which GCP
+    // always services with the current primary version, moving every
+    // file's wrapped data key off whatever version it was on before.
+    newVault, newRecipients, err = vaultForProvider(cfg)
+    oldVault = newVault
+```
+
+`oldVault.Open(f)` calls KMS `Decrypt`, which GCP resolves to whichever
+version wrapped that file's data key. `newVault.Seal(f, ...)` generates a
+fresh data key and calls KMS `Encrypt`, serviced by the current primary
+version — same `oldVault == newVault` trick the `local` case already
+uses, since the resource ID/identity doesn't change. The follow-up
+message mirrors `local`'s: *"Old KMS key versions are still enabled to
+decrypt anything not yet migrated, including committed history. Once
+every commit that matters has been rotated, disable or destroy the old
+version(s) in GCP to complete the rotation."*
+
 ## Components touched
 
 - **New: `internal/keyservice/gcpkms/gcpkms.go`.** A `Provider`
@@ -112,8 +145,9 @@ encrypt / decrypt / clean / smudge
   `cfg.Provider`. For `gcpkms`: the verify-and-instruct round trip above.
   For `local`/`passphrase`: `"provider %q does not use git vault login"`
   instead of today's blanket stub error.
-- **`internal/cli/rotate.go`:** add `case gcpkms.Name` that errors with a
-  message pointing at GCP KMS's own automatic key rotation.
+- **`internal/cli/rotate.go`:** add `case gcpkms.Name` per the Rotation
+  section above — re-seals every tracked file so each one's wrapped data
+  key moves onto the current primary KMS key version.
 - **`internal/cli/migrate.go`:** no special-casing expected — it already
   resolves providers generically through `vaultForProvider`, so
   migrating a repo to/from gcpkms should work once the above lands.
@@ -132,6 +166,10 @@ encrypt / decrypt / clean / smudge
   `git vault install --provider gcpkms --key-resource-id projects/.../cryptoKeys/...`
 - **Per-developer setup:** `git vault login`, what success/failure look
   like, and the `gcloud auth application-default login` fallback.
+- **Rotation:** what `git vault rotate` does for this provider and why
+  (crypto-shredding — see the Rotation section above), plus the
+  `gcloud kms keys versions disable/destroy` commands to run against the
+  old version once every relevant commit has been rotated.
 - **Troubleshooting:** IAM-permission-denied and malformed-resource-ID
   cases (see Error handling below).
 
@@ -155,5 +193,8 @@ encrypt / decrypt / clean / smudge
   exactly this, the same pattern sops's own tests use. No real GCP
   project involved.
 - `vaultForProvider`/`install`/`login`/`rotate` CLI tests use that fake
-  provider the same way existing tests fake `local`/`passphrase`.
+  provider the same way existing tests fake `local`/`passphrase`. The
+  rotate test should assert the resulting file's `enc` blob actually
+  changes (i.e. a fresh KMS Encrypt call happened), not just that the
+  command exits zero.
 - No integration test against real GCP infrastructure — out of scope.
