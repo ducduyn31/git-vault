@@ -44,7 +44,9 @@ func newInstallCmd() *cobra.Command {
 			if global {
 				scope = "global"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed git-vault filter driver (%s scope).\nRecipient: %s:%s\n", scope, local.Name, recipient)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Installed git-vault filter driver (%s scope).\nRecipient: %s:%s\n", scope, local.Name, recipient); err != nil {
+				return fmt.Errorf("git vault install: print recipient: %w", err)
+			}
 			return nil
 		},
 	}
