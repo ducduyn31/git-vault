@@ -25,23 +25,3 @@ func TestVersionCmd_PrintsVersion(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	require.Equal(t, "dev\n", out.String())
 }
-
-func TestStubCommands_NotImplemented(t *testing.T) {
-	cases := []struct {
-		name string
-		args []string
-	}{
-		{"login", []string{"login"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cmd := NewRootCmd()
-			cmd.SetOut(&bytes.Buffer{})
-			cmd.SetErr(&bytes.Buffer{})
-			cmd.SetArgs(tc.args)
-
-			err := cmd.Execute()
-			require.ErrorContains(t, err, "not implemented in scaffold")
-		})
-	}
-}
