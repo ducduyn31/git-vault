@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -45,6 +47,22 @@ func TestVaultForProvider_GCPKMS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"gcpkms:projects/test/locations/global/keyRings/test/cryptoKeys/test"}, recipients)
+}
+
+func TestVaultForProvider_AWSKMS(t *testing.T) {
+	hc, creds, cleanup, err := awskmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := awskms.SetTestOverridesForTesting(hc, creds)
+	defer restore()
+
+	v, recipients, err := vaultForProvider(config.Config{
+		Provider:      awskms.Name,
+		KeyResourceID: "arn:aws:kms:us-east-1:111111111111:key/test",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	require.Equal(t, []string{"awskms:arn:aws:kms:us-east-1:111111111111:key/test"}, recipients)
 }
 
 func TestVaultForProvider_UnknownProviderFails(t *testing.T) {
