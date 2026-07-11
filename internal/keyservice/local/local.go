@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"filippo.io/age"
 	"filippo.io/age/armor"
@@ -103,7 +104,7 @@ func (p *Provider) Rotate() (string, error) {
 		return "", err
 	}
 
-	id, err := age.GenerateX25519Identity()
+	id, err := age.GenerateHybridIdentity()
 	if err != nil {
 		return "", fmt.Errorf("local: generate identity: %w", err)
 	}
@@ -125,16 +126,21 @@ func (p *Provider) Rotate() (string, error) {
 // keyID using real age encryption, armored (see armor.NewWriter below) so
 // the result is safe to store as a string inside a YAML/JSON document —
 // raw binary age output is not valid UTF-8 and JSON in particular would
-// silently corrupt it.
+// silently corrupt it. age.ParseRecipients (rather than a hardcoded
+// X25519 parse) dispatches on the age1/age1pq prefix, so this handles
+// both classical and hybrid post-quantum recipients.
 func (p *Provider) Encrypt(_ context.Context, keyID string, plaintext []byte) ([]byte, error) {
-	recipient, err := age.ParseX25519Recipient(keyID)
+	recipients, err := age.ParseRecipients(strings.NewReader(keyID))
 	if err != nil {
 		return nil, fmt.Errorf("local: parse recipient %q: %w", keyID, err)
+	}
+	if len(recipients) != 1 {
+		return nil, fmt.Errorf("local: expected exactly one recipient in %q, got %d", keyID, len(recipients))
 	}
 
 	var buf bytes.Buffer
 	aw := armor.NewWriter(&buf)
-	w, err := age.Encrypt(aw, recipient)
+	w, err := age.Encrypt(aw, recipients[0])
 	if err != nil {
 		return nil, fmt.Errorf("local: encrypt: %w", err)
 	}
@@ -202,7 +208,7 @@ func (p *Provider) identities() ([]age.Identity, error) {
 			return nil, migrateErr
 		}
 		if !migrated {
-			id, err := age.GenerateX25519Identity()
+			id, err := age.GenerateHybridIdentity()
 			if err != nil {
 				return nil, fmt.Errorf("local: generate identity: %w", err)
 			}
