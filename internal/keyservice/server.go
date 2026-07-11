@@ -2,6 +2,7 @@ package keyservice
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	sopskeyservice "github.com/getsops/sops/v3/keyservice"
@@ -39,7 +40,7 @@ func (s *Server) Encrypt(ctx context.Context, req *sopskeyservice.EncryptRequest
 	}
 	ciphertext, err := provider.Encrypt(ctx, keyID, req.GetPlaintext())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "provider %q encrypt: %v", provider.Name(), err)
+		return nil, fmt.Errorf("provider %q encrypt: %w", provider.Name(), err)
 	}
 	return &sopskeyservice.EncryptResponse{Ciphertext: ciphertext}, nil
 }
@@ -51,7 +52,7 @@ func (s *Server) Decrypt(ctx context.Context, req *sopskeyservice.DecryptRequest
 	}
 	plaintext, err := provider.Decrypt(ctx, keyID, req.GetCiphertext())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "provider %q decrypt: %v", provider.Name(), err)
+		return nil, fmt.Errorf("provider %q decrypt: %w", provider.Name(), err)
 	}
 	return &sopskeyservice.DecryptResponse{Plaintext: plaintext}, nil
 }

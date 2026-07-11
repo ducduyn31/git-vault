@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -148,4 +150,43 @@ func TestRotateCmd_UnknownProviderFails(t *testing.T) {
 
 	err := cmd.Execute()
 	require.ErrorContains(t, err, `unknown provider "bogus"`)
+}
+
+func TestRotateCmd_GCPKMS_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	opts, cleanup, err := gcpkmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := gcpkms.SetClientOptionsForTesting(opts)
+	defer restore()
+
+	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      gcpkms.Name,
+		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/test",
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.NotEqual(t, string(sealedBefore), string(sealedAfter), "rotate must force a fresh KMS Encrypt call")
+
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
 }
