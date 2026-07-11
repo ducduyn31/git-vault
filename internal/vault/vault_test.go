@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -124,14 +125,29 @@ func TestSeal_NoRecipientsErrors(t *testing.T) {
 
 func TestOpen_TamperedMacFails(t *testing.T) {
 	v, recipients := newTestVault(t)
-	path := filepath.Join(t.TempDir(), "secret.env")
-	require.NoError(t, os.WriteFile(path, []byte("A=b\n"), 0o644))
+	path := filepath.Join(t.TempDir(), "secret.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("password: hunter2\nusername: admin\n"), 0o644))
 	require.NoError(t, v.Seal(path, recipients))
 
 	sealed, err := os.ReadFile(path)
 	require.NoError(t, err)
-	tampered := string(sealed) + "INJECTED=x\n"
-	require.NoError(t, os.WriteFile(path, []byte(tampered), 0o644))
 
-	require.Error(t, v.Open(path))
+	// Delete the "username: ENC[...]" line entirely, leaving "password"'s
+	// ciphertext and the sops metadata block untouched. Each remaining
+	// value's own AES-GCM tag is unaffected (its path/AAD didn't change),
+	// so per-value decryption still succeeds with no parse/decrypt error —
+	// only the tree-wide MAC (computed over the original two-value set)
+	// disagrees with what gets recomputed over the now-one-value tree,
+	// proving the MAC-mismatch branch itself is what rejects this file.
+	var tampered []string
+	for _, line := range strings.Split(string(sealed), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "username:") {
+			continue
+		}
+		tampered = append(tampered, line)
+	}
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(tampered, "\n")), 0o644))
+
+	err = v.Open(path)
+	require.ErrorContains(t, err, "mac mismatch")
 }
