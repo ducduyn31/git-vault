@@ -1,0 +1,151 @@
+package cli
+
+import (
+	"bytes"
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/local"
+	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
+)
+
+func TestRotateCmd_Local_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	original := setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	// Provider name is unchanged — rotate never writes .git-vault.yaml.
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, local.Name, cfg.Provider)
+
+	// Prove the file actually opens under the NEW identity, not just that
+	// the command exited 0.
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+
+	// A second rotate still works — the identity list keeps growing.
+	cmd2 := NewRootCmd()
+	out2 := &bytes.Buffer{}
+	cmd2.SetOut(out2)
+	cmd2.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd2.Execute())
+	require.Contains(t, out2.String(), "Rotated 1 file")
+}
+
+func TestRotateCmd_Passphrase_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(passphrase.EnvVar, "old passphrase")
+	chdirTemp(t)
+	original := setupTrackedEncryptedFile(t, passphrase.Name)
+
+	restore := passphrase.SetPromptForTesting(func() (string, error) { return "new passphrase", nil })
+	defer restore()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	// Now that the file is sealed under "new passphrase", the old env var
+	// value alone can no longer open it...
+	decryptWithOld := NewRootCmd()
+	decryptWithOld.SetOut(&bytes.Buffer{})
+	decryptWithOld.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.Error(t, decryptWithOld.Execute())
+
+	// ...but the new one does.
+	t.Setenv(passphrase.EnvVar, "new passphrase")
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+}
+
+func TestRotateCmd_Passphrase_MismatchedConfirmationFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(passphrase.EnvVar, "old passphrase")
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, passphrase.Name)
+
+	calls := 0
+	restore := passphrase.SetPromptForTesting(func() (string, error) {
+		calls++
+		if calls == 1 {
+			return "first entry", nil
+		}
+		return "second entry", nil
+	})
+	defer restore()
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"rotate"})
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "did not match")
+
+	// Nothing was touched: the file is still sealed under the original
+	// passphrase.
+	sealed, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Contains(t, string(sealed), "ENC[")
+}
+
+func TestRotateCmd_NoTrackedFiles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: local.Name}))
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 0 file")
+}
+
+func TestRotateCmd_MissingConfigFails(t *testing.T) {
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"rotate"})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "git vault install")
+}
+
+func TestRotateCmd_UnknownProviderFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: "bogus"}))
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"rotate"})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, `unknown provider "bogus"`)
+}
