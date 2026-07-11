@@ -12,3 +12,6 @@ result-*
 
 # Editor/OS
 .DS_Store
+
+# Subagent-driven-development scratch (progress ledger, review packages)
+.superpowers/
