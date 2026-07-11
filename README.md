@@ -42,6 +42,18 @@ git commit -m "Track secrets with git-vault"
 git config instead, so any repo you clone afterwards is protected
 immediately.
 
+`git vault uninstall` reverses `install`, unregistering the filter driver
+(add `--global` to match an `install --global`). It leaves `.git-vault.yaml`
+and `.gitattributes` untouched by default; add `--purge-config` to remove
+`.git-vault.yaml`, `--purge-attrs` to strip git-vault's lines from
+`.gitattributes`, or `--purge-keys` to also delete this machine's local key
+material and cached session. `--purge-keys` prompts for confirmation first
+(skip it with `--force`), since deleting the key makes anything only it can
+decrypt permanently unreadable. Unregistering the filter driver also makes
+`.gitattributes`' filter lines inert, so `uninstall` warns if any tracked
+file is currently plaintext in your working tree — reinstall before staging
+it, or handle it manually, or it'll be committed as plaintext to history.
+
 Check what's tracked and its current encryption state at any time:
 
 ```sh
