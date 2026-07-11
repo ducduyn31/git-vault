@@ -26,3 +26,19 @@ func TestTrackCmd_AppendsPattern(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"secrets/*.yaml"}, patterns)
 }
+
+func TestTrackCmd_PrintsConfirmation(t *testing.T) {
+	dir := t.TempDir()
+	old, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	defer func() { _ = os.Chdir(old) }()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"track", "secrets/*.yaml"})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "Tracking secrets/*.yaml")
+}

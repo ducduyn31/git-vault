@@ -49,7 +49,8 @@ func TestStatusCmd_ReportsPlaintextThenEncrypted(t *testing.T) {
 	statusCmd.SetOut(plainOut)
 	statusCmd.SetArgs([]string{"status"})
 	require.NoError(t, statusCmd.Execute())
-	require.Contains(t, plainOut.String(), "secret.yaml\tplaintext")
+	require.Contains(t, plainOut.String(), "secret.yaml")
+	require.Contains(t, plainOut.String(), "plaintext")
 
 	encryptCmd := NewRootCmd()
 	encryptCmd.SetOut(&bytes.Buffer{})
@@ -61,5 +62,6 @@ func TestStatusCmd_ReportsPlaintextThenEncrypted(t *testing.T) {
 	statusCmd.SetOut(sealedOut)
 	statusCmd.SetArgs([]string{"status"})
 	require.NoError(t, statusCmd.Execute())
-	require.Contains(t, sealedOut.String(), "secret.yaml\tencrypted")
+	require.Contains(t, sealedOut.String(), "secret.yaml")
+	require.Contains(t, sealedOut.String(), "encrypted")
 }

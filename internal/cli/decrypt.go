@@ -1,6 +1,12 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/ducduyn31/git-vault/internal/ui"
+)
 
 func newDecryptCmd() *cobra.Command {
 	return &cobra.Command{
@@ -12,7 +18,11 @@ func newDecryptCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return v.Open(args[0])
+			if err := v.Open(args[0]); err != nil {
+				return err
+			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Opened %s", args[0]))
+			return nil
 		},
 	}
 }
