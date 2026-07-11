@@ -15,10 +15,12 @@ plaintext only ever touches disk in your working tree, never in git history.
   decrypt is a matter of which key provider is configured — not a
   hardcoded scheme.
 
-**Status:** early — encrypt/decrypt, the clean/smudge filter, and status
-reporting work today using a local per-machine key. Team key-sharing
-providers (SSO, etc.) are on the roadmap; `git vault login` isn't
-implemented yet.
+**Status:** early — encrypt/decrypt, the clean/smudge filter, status
+reporting, key rotation, and cross-provider migration all work today.
+GCP KMS is available as a first team key-sharing provider, authorized
+through your org's existing Google Workspace SSO — see
+[docs/gcpkms-provider.md](docs/gcpkms-provider.md). Other cloud
+providers (AWS, Azure) are on the roadmap.
 
 ## Configure git-vault in a project
 
@@ -66,6 +68,12 @@ To seal or open a file outside of git's stage/checkout path:
 git vault encrypt secrets/prod.yaml
 git vault decrypt secrets/prod.yaml
 ```
+
+## Team key-sharing with GCP KMS
+
+For a shared key backed by your org's existing SSO (rather than a local
+per-machine key or an out-of-band passphrase), see
+[docs/gcpkms-provider.md](docs/gcpkms-provider.md).
 
 ## Development
 

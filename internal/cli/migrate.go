@@ -8,15 +8,19 @@ import (
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
 // newMigrateCmd re-seals every tracked file from the repo's current
-// provider to a different target provider, then updates .git-vault.yaml.
-// Same-provider "rotation" is rejected rather than silently no-op'd: both
-// existing providers (local, passphrase) have exactly one key source, so
-// there is no old/new key pair to rotate between within one provider — see
-// docs/superpowers/specs/2026-07-11-migrate-provider-design.md.
+// provider/key to a different target, then updates .git-vault.yaml. A
+// target that resolves to the exact same key as the current one is
+// rejected rather than silently no-op'd: for local/passphrase that's
+// always true (each has exactly one key source); for gcpkms it's only
+// true when the resource ID also matches, since two different gcpkms
+// targets can share the provider name but name different keys. See
+// docs/superpowers/specs/2026-07-11-migrate-provider-design.md and
+// docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md.
 func newMigrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
@@ -30,26 +34,36 @@ func newMigrateCmd() *cobra.Command {
 			if target == "" {
 				return fmt.Errorf("git vault migrate: --provider is required")
 			}
+			keyResourceID, err := cmd.Flags().GetString("key-resource-id")
+			if err != nil {
+				return err
+			}
 
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			if target == cfg.Provider {
-				return fmt.Errorf("git vault migrate: already using provider %q; in-place key rotation isn't supported (each provider has a single key source) — pick a different --provider", target)
-			}
 
 			if target == passphrase.Name && os.Getenv(passphrase.EnvVar) == "" {
 				return fmt.Errorf("git vault migrate: %s not set", passphrase.EnvVar)
 			}
+			if target == gcpkms.Name && keyResourceID == "" {
+				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", gcpkms.Name)
+			}
 
-			oldVault, _, err := vaultForProvider(cfg.Provider)
+			targetCfg := config.Config{Provider: target, KeyResourceID: keyResourceID}
+
+			oldVault, oldRecipients, err := vaultForProvider(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
-			newVault, newRecipients, err := vaultForProvider(target)
+			newVault, newRecipients, err := vaultForProvider(targetCfg)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
+			}
+
+			if len(oldRecipients) == 1 && len(newRecipients) == 1 && oldRecipients[0] == newRecipients[0] {
+				return fmt.Errorf("git vault migrate: target is identical to the current key (%s); nothing to migrate", oldRecipients[0])
 			}
 
 			patterns, err := gitattr.Tracked(".gitattributes")
@@ -73,7 +87,7 @@ func newMigrateCmd() *cobra.Command {
 				}
 			}
 
-			if err := config.Save(config.DefaultFileName, config.Config{Provider: target}); err != nil {
+			if err := config.Save(config.DefaultFileName, targetCfg); err != nil {
 				return fmt.Errorf("git vault migrate: write %s: %w", config.DefaultFileName, err)
 			}
 
@@ -86,6 +100,7 @@ func newMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase)")
+	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
 	return cmd
 }

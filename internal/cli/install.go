@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -26,21 +27,36 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			keyResourceID, err := cmd.Flags().GetString("key-resource-id")
+			if err != nil {
+				return err
+			}
 
 			if providerName == passphrase.Name && os.Getenv(passphrase.EnvVar) == "" {
 				return fmt.Errorf("git vault install: %s not set", passphrase.EnvVar)
 			}
+			if providerName == gcpkms.Name && keyResourceID == "" {
+				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", gcpkms.Name)
+			}
+
+			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID}
 
 			// vaultForProvider both validates providerName (its default
 			// case errors on anything unknown) and resolves the
 			// "<provider>:<key-id>" recipient to print, via the same
 			// switch newVault() uses at encrypt/decrypt/clean/smudge time
 			// — no separate recipient-resolution switch needed here.
-			_, recipients, err := vaultForProvider(providerName)
+			_, recipients, err := vaultForProvider(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault install: %w", err)
 			}
 			recipient := recipients[0]
+
+			if providerName == gcpkms.Name {
+				if err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
+					return fmt.Errorf("git vault install: %w", err)
+				}
+			}
 
 			settings := []struct{ key, value string }{
 				{"filter.git-vault.clean", "git-vault clean %f"},
@@ -53,7 +69,7 @@ func newInstallCmd() *cobra.Command {
 				}
 			}
 
-			if err := config.Save(config.DefaultFileName, config.Config{Provider: providerName}); err != nil {
+			if err := config.Save(config.DefaultFileName, cfg); err != nil {
 				return fmt.Errorf("git vault install: write %s: %w", config.DefaultFileName, err)
 			}
 
@@ -68,7 +84,8 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
-	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase)")
+	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
 	return cmd
 }
 
