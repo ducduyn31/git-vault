@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/ui"
@@ -36,8 +37,8 @@ func newInstallCmd() *cobra.Command {
 				return err
 			}
 
-			if providerName == gcpkms.Name && keyResourceID == "" {
-				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", gcpkms.Name)
+			if (providerName == gcpkms.Name || providerName == azurekms.Name) && keyResourceID == "" {
+				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", providerName)
 			}
 
 			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID, AutoLogin: autoLogin}
@@ -50,10 +51,19 @@ func newInstallCmd() *cobra.Command {
 			}
 			recipient := recipients[0]
 
-			if providerName == gcpkms.Name {
+			switch providerName {
+			case gcpkms.Name:
 				err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
 				if errors.Is(err, gcpkms.ErrNoCredentials) && attemptGcloudLogin(cmd, autoLogin) {
 					err = verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
+				}
+				if err != nil {
+					return fmt.Errorf("git vault install: %w", err)
+				}
+			case azurekms.Name:
+				err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
+				if errors.Is(err, azurekms.ErrNoCredentials) && attemptAzLogin(cmd, autoLogin) {
+					err = verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
 				}
 				if err != nil {
 					return fmt.Errorf("git vault install: %w", err)
@@ -84,9 +94,9 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
-	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
-	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run gcloud auth application-default login automatically when ADC is missing (gcpkms only)")
+	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms, azurekms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID or Azure Key Vault key URL (required when --provider gcpkms or azurekms)")
+	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, azurekms)")
 	return cmd
 }
 
