@@ -337,6 +337,7 @@ func TestFormatForPath(t *testing.T) {
 		{"app.env", FormatDotenv},
 		{"key.pem", FormatBinary},
 		{"noextension", FormatBinary},
+		{"backup.env.old/config.yaml", FormatYAML},
 	}
 
 	for _, c := range cases {
@@ -368,6 +369,7 @@ Create `internal/vault/format.go`:
 package vault
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/getsops/sops/v3"
@@ -401,12 +403,13 @@ const (
 // get the dotenv store; anything else falls back to the binary
 // (whole-file) store.
 func FormatForPath(path string) Format {
+	base := filepath.Base(path)
 	switch {
-	case strings.HasSuffix(path, ".env") || strings.Contains(path, ".env."):
+	case strings.HasSuffix(base, ".env") || strings.Contains(base, ".env."):
 		return FormatDotenv
-	case strings.HasSuffix(path, ".json"):
+	case strings.HasSuffix(base, ".json"):
 		return FormatJSON
-	case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
+	case strings.HasSuffix(base, ".yaml"), strings.HasSuffix(base, ".yml"):
 		return FormatYAML
 	default:
 		return FormatBinary
