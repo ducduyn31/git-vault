@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -27,7 +28,7 @@ func newRotateCmd() *cobra.Command {
 				return err
 			}
 
-			oldVault, _, err := vaultForProvider(cfg.Provider)
+			oldVault, _, err := vaultForProvider(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault rotate: %w", err)
 			}
@@ -47,7 +48,7 @@ func newRotateCmd() *cobra.Command {
 				// whichever stored identity a file names, and the
 				// freshly rotated identity is the newest, so Encrypt
 				// targets it.
-				newVault, newRecipients, err = vaultForProvider(local.Name)
+				newVault, newRecipients, err = vaultForProvider(config.Config{Provider: local.Name})
 				if err != nil {
 					return fmt.Errorf("git vault rotate: %w", err)
 				}

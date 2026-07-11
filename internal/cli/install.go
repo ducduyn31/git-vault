@@ -36,7 +36,7 @@ func newInstallCmd() *cobra.Command {
 			// "<provider>:<key-id>" recipient to print, via the same
 			// switch newVault() uses at encrypt/decrypt/clean/smudge time
 			// — no separate recipient-resolution switch needed here.
-			_, recipients, err := vaultForProvider(providerName)
+			_, recipients, err := vaultForProvider(config.Config{Provider: providerName})
 			if err != nil {
 				return fmt.Errorf("git vault install: %w", err)
 			}

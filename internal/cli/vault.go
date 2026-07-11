@@ -6,6 +6,7 @@ import (
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 	"github.com/ducduyn31/git-vault/internal/vault"
@@ -49,15 +50,34 @@ func newPassphraseVault() (*vault.Vault, []string, error) {
 	return vault.New(server), []string{passphrase.Name + ":" + passphrase.KeyID}, nil
 }
 
-// vaultForProvider builds the Vault for the named provider.
-func vaultForProvider(name string) (*vault.Vault, []string, error) {
-	switch name {
+// newGCPKMSVault builds a Vault dispatching to GCP KMS, along with the
+// "<provider>:<key-id>" recipient string for cfg.KeyResourceID. Unlike
+// local/passphrase, the key material lives entirely in GCP — this
+// Provider holds no identity of its own beyond whatever ADC resolves to.
+func newGCPKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
+	registry := keyservice.NewRegistry()
+	if err := registry.Register(gcpkms.New()); err != nil {
+		return nil, nil, err
+	}
+	server := keyservice.NewServer(registry)
+
+	return vault.New(server), []string{gcpkms.Name + ":" + cfg.KeyResourceID}, nil
+}
+
+// vaultForProvider builds the Vault for the provider named in cfg. It
+// takes the full config, not just the provider name, because gcpkms
+// needs KeyResourceID — local/passphrase ignore everything but
+// cfg.Provider.
+func vaultForProvider(cfg config.Config) (*vault.Vault, []string, error) {
+	switch cfg.Provider {
 	case local.Name:
 		return newLocalVault()
 	case passphrase.Name:
 		return newPassphraseVault()
+	case gcpkms.Name:
+		return newGCPKMSVault(cfg)
 	default:
-		return nil, nil, fmt.Errorf("git vault: unknown provider %q in %s", name, config.DefaultFileName)
+		return nil, nil, fmt.Errorf("git vault: unknown provider %q in %s", cfg.Provider, config.DefaultFileName)
 	}
 }
 
@@ -83,5 +103,5 @@ func newVault() (*vault.Vault, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return vaultForProvider(cfg.Provider)
+	return vaultForProvider(cfg)
 }
