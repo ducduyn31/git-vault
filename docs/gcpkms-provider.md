@@ -34,14 +34,31 @@ yourself):
 This validates the resource ID immediately with a real encrypt/decrypt
 round trip — a typo'd path fails here, not at your first commit.
 
+Add `--auto-login` to skip the confirmation prompt described
+below (see "Auto-login" below) for every developer on this repo. It's
+persisted to `.git-vault.yaml` as `auto_login: true`, so it's a
+one-time, team-wide, repo-committed decision.
+
 ## 3. Per-developer setup
 
-    gcloud auth application-default login
     git vault login
 
-`git vault login` doesn't perform the browser flow itself — it only
-checks whether ADC already resolves to something that can use the
-configured key, and tells you the exact command to run if not.
+`git vault login` checks whether ADC already resolves to something that
+can use the configured key. If not, and `gcloud` is on your PATH, it
+offers to run `gcloud auth application-default login` for you (with
+confirmation — it opens a browser and writes credentials to disk, so it
+never runs without an explicit yes). Decline, or run it yourself first,
+and login falls back to just telling you the exact command to run.
+
+### Auto-login
+
+If `.git-vault.yaml` has `auto_login: true` (see `--auto-login`
+above), `git vault login` and `git vault install` skip the confirmation
+prompt and run `gcloud auth application-default login` immediately when
+ADC is missing. Useful for a team that's already decided every developer
+authenticates this way; `gcloud` still has to be on PATH, and it still
+opens a real browser window — this only removes the extra keystroke, not
+the login flow itself.
 
 ## 4. Rotation
 

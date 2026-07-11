@@ -19,6 +19,17 @@ type Config struct {
 	IssuerURL     string `yaml:"issuer_url,omitempty"`
 	ClientID      string `yaml:"client_id,omitempty"`
 	KeyResourceID string `yaml:"key_resource_id,omitempty"`
+
+	// AutoLogin skips `git vault login`'s "run this for me?" confirmation
+	// prompt when the configured provider needs an external login step
+	// (currently: gcpkms's `gcloud auth application-default login`) and
+	// finds none in place, running it straight away instead. It's a
+	// repo-committed opt-in (not a hidden default), and provider-agnostic
+	// by design since any future SSO-backed provider (AWS, Azure, ...)
+	// hits the same "one confirm keystroke vs. a smoother fresh-machine
+	// login" tradeoff — a team explicitly choosing this once covers
+	// whichever provider they're on.
+	AutoLogin bool `yaml:"auto_login,omitempty"`
 }
 
 func Load(path string) (Config, error) {

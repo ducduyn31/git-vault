@@ -199,6 +199,30 @@ func TestInstallCmd_GCPKMS_WritesConfigAndValidates(t *testing.T) {
 	require.Equal(t, "projects/test/locations/global/keyRings/test/cryptoKeys/test", cfg.KeyResourceID)
 }
 
+func TestInstallCmd_GCPKMS_AutoLoginFlagPersists(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	opts, cleanup, err := gcpkmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := gcpkms.SetClientOptionsForTesting(opts)
+	defer restore()
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"install", "--provider=" + gcpkms.Name,
+		"--key-resource-id=projects/test/locations/global/keyRings/test/cryptoKeys/test",
+		"--auto-login",
+	})
+	require.NoError(t, cmd.Execute())
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.True(t, cfg.AutoLogin)
+}
+
 func TestInstallCmd_GCPKMS_MissingKeyResourceIDFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	chdirTemp(t)
