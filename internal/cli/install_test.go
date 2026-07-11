@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -251,4 +253,59 @@ func TestInstallCmd_GCPKMS_FailsWithoutReachableKMS(t *testing.T) {
 
 	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
 	require.Error(t, gitErr, "git config must not be set when install fails the KMS round trip")
+}
+
+func TestInstallCmd_AzureKMS_WritesConfigAndValidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"install", "--provider=" + azurekms.Name,
+		"--key-resource-id=https://test.vault.azure.net/keys/test-key/v1",
+	})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "Recipient: azurekms:https://test.vault.azure.net/keys/test-key/v1")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, azurekms.Name, cfg.Provider)
+	require.Equal(t, "https://test.vault.azure.net/keys/test-key/v1", cfg.KeyResourceID)
+}
+
+func TestInstallCmd_AzureKMS_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--provider=" + azurekms.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestInstallCmd_AzureKMS_FailsWithoutReachableVault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"install", "--provider=" + azurekms.Name,
+		"--key-resource-id=not-a-valid-url",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+
+	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
+	require.Error(t, gitErr, "git config must not be set when install fails the Key Vault round trip")
 }
