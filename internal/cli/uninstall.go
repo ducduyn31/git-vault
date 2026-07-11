@@ -11,6 +11,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/session"
+	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
 func newUninstallCmd() *cobra.Command {
@@ -34,6 +35,11 @@ func newUninstallCmd() *cobra.Command {
 			purgeAttrs, err := cmd.Flags().GetBool("purge-attrs")
 			if err != nil {
 				return err
+			}
+
+			_, plaintext, err := trackedFileStates()
+			if err != nil {
+				return fmt.Errorf("git vault uninstall: %w", err)
 			}
 
 			for _, key := range []string{"filter.git-vault.clean", "filter.git-vault.smudge", "filter.git-vault.required"} {
@@ -67,6 +73,20 @@ func newUninstallCmd() *cobra.Command {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Uninstalled git-vault filter driver (%s scope).\n", scope); err != nil {
 				return fmt.Errorf("git vault uninstall: %w", err)
 			}
+
+			if len(plaintext) > 0 {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Warning: %d file(s) tracked by git-vault are currently plaintext and no longer protected now that the filter driver is unregistered:\n", len(plaintext)); err != nil {
+					return fmt.Errorf("git vault uninstall: %w", err)
+				}
+				for _, f := range plaintext {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", f); err != nil {
+						return fmt.Errorf("git vault uninstall: %w", err)
+					}
+				}
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "They will be committed as plaintext if staged before you reinstall (`git vault install`) or handle them manually."); err != nil {
+					return fmt.Errorf("git vault uninstall: %w", err)
+				}
+			}
 			return nil
 		},
 	}
@@ -75,6 +95,39 @@ func newUninstallCmd() *cobra.Command {
 	cmd.Flags().Bool("purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
 	cmd.Flags().Bool("purge-attrs", false, "also remove git-vault's filter lines from .gitattributes")
 	return cmd
+}
+
+// trackedFileStates enumerates git-vault-tracked files the same way
+// status.go does, splitting them into currently-sealed (ciphertext) and
+// currently-plaintext. Both empty if nothing is tracked. A file that
+// fails vault.IsSealed (e.g. unreadable) is skipped rather than failing
+// the whole scan — this feeds a best-effort warning, not a correctness
+// check.
+func trackedFileStates() (sealed, plaintext []string, err error) {
+	patterns, err := gitattr.Tracked(".gitattributes")
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(patterns) == 0 {
+		return nil, nil, nil
+	}
+
+	files, err := trackedFiles(patterns)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, f := range files {
+		ok, sealErr := vault.IsSealed(f)
+		if sealErr != nil {
+			continue
+		}
+		if ok {
+			sealed = append(sealed, f)
+		} else {
+			plaintext = append(plaintext, f)
+		}
+	}
+	return sealed, plaintext, nil
 }
 
 // unsetGitConfig removes key from git config, treating "key not set" (git's

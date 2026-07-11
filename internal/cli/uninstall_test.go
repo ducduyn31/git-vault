@@ -111,3 +111,76 @@ func TestUninstallCmd_PurgeAttrs_StripsGitVaultLinesOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "*.bin binary\n", string(got))
 }
+
+// trackPlaintextFile writes .git-vault.yaml directly, tracks "secret.yaml"
+// and git-adds it as plaintext (no encrypt), so tests can exercise
+// uninstall's plaintext-detection path without a real filter driver.
+func trackPlaintextFile(t *testing.T, provider string) {
+	t.Helper()
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: provider}))
+	require.NoError(t, gitattr.Track(".gitattributes", "secret.yaml"))
+	require.NoError(t, os.WriteFile("secret.yaml", []byte("password: hunter2\n"), 0o644))
+	require.NoError(t, exec.Command("git", "add", "secret.yaml").Run())
+}
+
+func TestUninstallCmd_WarnsAboutPlaintextTrackedFiles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	trackPlaintextFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"uninstall"})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "secret.yaml")
+	require.Contains(t, out.String(), "Warning")
+}
+
+func TestUninstallCmd_NoWarningWhenNothingTracked(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	runInstall(t)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"uninstall"})
+	require.NoError(t, cmd.Execute())
+
+	require.NotContains(t, out.String(), "Warning")
+}
+
+func TestUninstallCmd_NoWarningWhenTrackedFileIsSealed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"uninstall"})
+	require.NoError(t, cmd.Execute())
+
+	require.NotContains(t, out.String(), "Warning")
+}
+
+func TestUninstallCmd_PurgeAttrs_StillWarnsAboutPlaintextFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	trackPlaintextFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"uninstall", "--purge-attrs"})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "secret.yaml")
+	require.Contains(t, out.String(), "Warning")
+
+	got, err := os.ReadFile(".gitattributes")
+	require.NoError(t, err)
+	require.NotContains(t, string(got), "filter=git-vault")
+}
