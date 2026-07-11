@@ -1,6 +1,7 @@
 # Build output
 /git-vault
 /dist/
+/.task/
 
 # Go
 *.test
