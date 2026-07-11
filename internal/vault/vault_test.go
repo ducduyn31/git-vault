@@ -175,3 +175,19 @@ func TestOpenStream_AlreadyPlain_PassesThrough(t *testing.T) {
 
 	require.Equal(t, plaintext, out.String())
 }
+
+func TestIsSealed(t *testing.T) {
+	v, recipients := newTestVault(t)
+	path := filepath.Join(t.TempDir(), "secret.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("password: hunter2\n"), 0o644))
+
+	sealed, err := IsSealed(path)
+	require.NoError(t, err)
+	require.False(t, sealed)
+
+	require.NoError(t, v.Seal(path, recipients))
+
+	sealed, err = IsSealed(path)
+	require.NoError(t, err)
+	require.True(t, sealed)
+}

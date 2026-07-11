@@ -32,7 +32,6 @@ func TestStubCommands_NotImplemented(t *testing.T) {
 		args []string
 	}{
 		{"login", []string{"login"}},
-		{"status", []string{"status"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
