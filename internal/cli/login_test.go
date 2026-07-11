@@ -2,8 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
@@ -67,4 +73,65 @@ func TestLoginCmd_MissingConfigFails(t *testing.T) {
 
 	err := cmd.Execute()
 	require.ErrorContains(t, err, "git vault install")
+}
+
+// fakeGcloud puts a stub "gcloud" script on PATH that exits with
+// exitCode, and returns a function to restore the previous PATH.
+func fakeGcloud(t *testing.T, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gcloud script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gcloud")
+	contents := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	require.NoError(t, os.WriteFile(script, []byte(contents), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func promptCmd(in, out *bytes.Buffer) *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(in)
+	cmd.SetOut(out)
+	return cmd
+}
+
+func TestAttemptGcloudLogin_NoGcloudOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptGcloudLogin_Declined(t *testing.T) {
+	fakeGcloud(t, 0)
+	out := &bytes.Buffer{}
+	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.Contains(t, out.String(), "Run `gcloud auth application-default login` now?")
+}
+
+func TestAttemptGcloudLogin_ConfirmedAndGcloudSucceeds(t *testing.T) {
+	fakeGcloud(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+}
+
+func TestAttemptGcloudLogin_ConfirmedButGcloudFails(t *testing.T) {
+	fakeGcloud(t, 1)
+	out := &bytes.Buffer{}
+	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+}
+
+func TestAttemptGcloudLogin_AutoLoginSkipsPrompt(t *testing.T) {
+	fakeGcloud(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptGcloudLogin_AutoLoginStillNeedsGcloud(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString(""), out), true))
 }

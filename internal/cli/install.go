@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 
@@ -30,12 +31,16 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			autoLogin, err := cmd.Flags().GetBool("auto-login")
+			if err != nil {
+				return err
+			}
 
 			if providerName == gcpkms.Name && keyResourceID == "" {
 				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", gcpkms.Name)
 			}
 
-			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID}
+			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID, AutoLogin: autoLogin}
 
 			// vaultForProvider both validates providerName (its default
 			// case errors on anything unknown) and resolves the
@@ -49,7 +54,11 @@ func newInstallCmd() *cobra.Command {
 			recipient := recipients[0]
 
 			if providerName == gcpkms.Name {
-				if err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
+				err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
+				if errors.Is(err, gcpkms.ErrNoCredentials) && attemptGcloudLogin(cmd, autoLogin) {
+					err = verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
+				}
+				if err != nil {
 					return fmt.Errorf("git vault install: %w", err)
 				}
 			}
@@ -80,6 +89,7 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
 	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms)")
 	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
+	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run gcloud auth application-default login automatically when ADC is missing (gcpkms only)")
 	return cmd
 }
 

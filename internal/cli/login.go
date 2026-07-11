@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +33,11 @@ func newLoginCmd() *cobra.Command {
 				return fmt.Errorf("git vault login: provider %q does not use git vault login", cfg.Provider)
 			}
 
-			if err := verifyGCPKMSRoundTrip(cmd.Context(), cfg.KeyResourceID); err != nil {
+			err = verifyGCPKMSRoundTrip(cmd.Context(), cfg.KeyResourceID)
+			if errors.Is(err, gcpkms.ErrNoCredentials) && attemptGcloudLogin(cmd, cfg.AutoLogin) {
+				err = verifyGCPKMSRoundTrip(cmd.Context(), cfg.KeyResourceID)
+			}
+			if err != nil {
 				return fmt.Errorf("git vault login: %w", err)
 			}
 
@@ -37,6 +45,38 @@ func newLoginCmd() *cobra.Command {
 			return err
 		},
 	}
+}
+
+// attemptGcloudLogin tries to fix a missing-ADC failure by running
+// `gcloud auth application-default login` — the one gcpkms failure mode
+// `login`/`install` can actually fix instead of just diagnosing. Unless
+// autoLogin is set (config.Config.AutoLogin, a repo-committed
+// opt-in), it asks for confirmation first: the command opens a browser
+// and writes credentials to disk, which needs consent from a subcommand
+// that's otherwise read-only. Returns whether gcloud ran successfully, in
+// which case the caller should retry the round trip; false (declined, no
+// gcloud on PATH, or a nonzero exit) leaves the original error in place.
+func attemptGcloudLogin(cmd *cobra.Command, autoLogin bool) bool {
+	path, err := exec.LookPath("gcloud")
+	if err != nil {
+		return false
+	}
+
+	if !autoLogin {
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), "No Google credentials found. Run `gcloud auth application-default login` now? [y/N] "); err != nil {
+			return false
+		}
+		line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+			return false
+		}
+	}
+
+	gcloudCmd := exec.CommandContext(cmd.Context(), path, "auth", "application-default", "login")
+	gcloudCmd.Stdin = cmd.InOrStdin()
+	gcloudCmd.Stdout = cmd.OutOrStdout()
+	gcloudCmd.Stderr = cmd.ErrOrStderr()
+	return gcloudCmd.Run() == nil
 }
 
 // verifyGCPKMSRoundTrip encrypts and decrypts a fixed probe value against

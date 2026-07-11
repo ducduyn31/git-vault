@@ -15,6 +15,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 		IssuerURL:     "https://issuer.example.com",
 		ClientID:      "git-vault-cli",
 		KeyResourceID: "projects/p/locations/global/keyRings/r/cryptoKeys/k",
+		AutoLogin:     true,
 	}
 
 	require.NoError(t, Save(path, want))

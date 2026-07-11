@@ -5,12 +5,15 @@
 // login`. Unlike internal/keyservice/local and
 // internal/keyservice/passphrase, git-vault holds no key material of its
 // own here: GCP IAM on the KMS key is the only access control, and
-// `git vault login` never performs its own OAuth flow. See
-// docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md.
+// git-vault never runs its own OAuth flow — `git vault login`
+// (internal/cli/login.go) only ever shells out to the real `gcloud auth
+// application-default login`, and only with the user's explicit
+// confirmation. See docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md.
 package gcpkms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -78,17 +81,25 @@ func (p Provider) Decrypt(ctx context.Context, keyID string, ciphertext []byte) 
 	return plaintext, nil
 }
 
+// ErrNoCredentials is returned (via friendlyLoginErr) when Application
+// Default Credentials can't be found anywhere in their default chain.
+// It's a sentinel rather than just a message so callers — namely
+// internal/cli/login.go — can detect this specific, fixable case with
+// errors.Is and offer to run the command themselves, instead of every
+// caller re-parsing error text.
+var ErrNoCredentials = errors.New("gcpkms: no Google credentials found — run `gcloud auth application-default login` first")
+
 // friendlyLoginErr rewrites the fixed error golang.org/x/oauth2/google
 // emits when Application Default Credentials can't be found anywhere in
-// its default chain into an instruction to run the exact command that
-// fixes it. There is no exported sentinel error for this case in the
-// Google auth libraries, so a substring match on that fixed message is
-// the same technique gcloud itself and most third-party tools use to
-// detect it. Any other error (e.g. IAM permission denied, malformed
-// resource ID) is wrapped with op but otherwise passed through as-is.
+// its default chain into ErrNoCredentials. There is no exported
+// sentinel error for this case in the Google auth libraries, so a
+// substring match on that fixed message is the same technique gcloud
+// itself and most third-party tools use to detect it. Any other error
+// (e.g. IAM permission denied, malformed resource ID) is wrapped with op
+// but otherwise passed through as-is.
 func friendlyLoginErr(op string, err error) error {
 	if strings.Contains(err.Error(), "could not find default credentials") {
-		return fmt.Errorf("gcpkms: no Google credentials found — run `gcloud auth application-default login` first")
+		return ErrNoCredentials
 	}
 	return fmt.Errorf("gcpkms: %s: %w", op, err)
 }
