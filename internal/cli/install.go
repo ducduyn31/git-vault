@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/ui"
@@ -31,16 +32,20 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			awsProfile, err := cmd.Flags().GetString("aws-profile")
+			if err != nil {
+				return err
+			}
 			autoLogin, err := cmd.Flags().GetBool("auto-login")
 			if err != nil {
 				return err
 			}
 
-			if providerName == gcpkms.Name && keyResourceID == "" {
-				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", gcpkms.Name)
+			if (providerName == gcpkms.Name || providerName == awskms.Name) && keyResourceID == "" {
+				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", providerName)
 			}
 
-			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID, AutoLogin: autoLogin}
+			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID, AwsProfile: awsProfile, AutoLogin: autoLogin}
 
 			// vaultForProvider both validates providerName (its default
 			// case errors on anything unknown) and resolves the
@@ -53,10 +58,19 @@ func newInstallCmd() *cobra.Command {
 			}
 			recipient := recipients[0]
 
-			if providerName == gcpkms.Name {
+			switch providerName {
+			case gcpkms.Name:
 				err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
 				if errors.Is(err, gcpkms.ErrNoCredentials) && attemptGcloudLogin(cmd, autoLogin) {
 					err = verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
+				}
+				if err != nil {
+					return fmt.Errorf("git vault install: %w", err)
+				}
+			case awskms.Name:
+				err := verifyAWSKMSRoundTrip(cmd.Context(), keyResourceID, awsProfile)
+				if errors.Is(err, awskms.ErrExpiredSSOSession) && attemptAWSSSOLogin(cmd, awsProfile, autoLogin) {
+					err = verifyAWSKMSRoundTrip(cmd.Context(), keyResourceID, awsProfile)
 				}
 				if err != nil {
 					return fmt.Errorf("git vault install: %w", err)
@@ -87,9 +101,10 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
-	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
-	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run gcloud auth application-default login automatically when ADC is missing (gcpkms only)")
+	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms, awskms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID or AWS KMS ARN (required when --provider gcpkms or awskms)")
+	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
+	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, awskms)")
 	return cmd
 }
 
