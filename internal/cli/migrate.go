@@ -7,6 +7,7 @@ import (
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
@@ -15,11 +16,12 @@ import (
 // provider/key to a different target, then updates .git-vault.yaml. A
 // target that resolves to the exact same key as the current one is
 // rejected rather than silently no-op'd: for local/passphrase that's
-// always true (each has exactly one key source); for gcpkms it's only
-// true when the resource ID also matches, since two different gcpkms
+// always true (each has exactly one key source); for gcpkms/awskms it's
+// only true when the resource ID also matches, since two different
 // targets can share the provider name but name different keys. See
-// docs/superpowers/specs/2026-07-11-migrate-provider-design.md and
-// docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md.
+// docs/superpowers/specs/2026-07-11-migrate-provider-design.md,
+// docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md, and
+// docs/superpowers/specs/2026-07-12-awskms-provider-design.md.
 func newMigrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
@@ -37,17 +39,21 @@ func newMigrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			awsProfile, err := cmd.Flags().GetString("aws-profile")
+			if err != nil {
+				return err
+			}
 
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
 
-			if target == gcpkms.Name && keyResourceID == "" {
-				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", gcpkms.Name)
+			if (target == gcpkms.Name || target == awskms.Name) && keyResourceID == "" {
+				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", target)
 			}
 
-			targetCfg := config.Config{Provider: target, KeyResourceID: keyResourceID}
+			targetCfg := config.Config{Provider: target, KeyResourceID: keyResourceID, AwsProfile: awsProfile}
 
 			oldVault, oldRecipients, err := vaultForProvider(cfg)
 			if err != nil {
@@ -93,7 +99,8 @@ func newMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID (required when --provider gcpkms)")
+	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms, awskms)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID or AWS KMS ARN (required when --provider gcpkms or awskms)")
+	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
 	return cmd
 }
