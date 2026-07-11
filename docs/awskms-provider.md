@@ -86,7 +86,9 @@ use `git vault migrate`, not `rotate`:
   `kms:Encrypt`/`kms:Decrypt` on the key. Ask whoever ran the admin
   bootstrap step to grant it.
 - `no valid ARN found in '...'` — the `--key-resource-id` doesn't match
-  `arn:aws:kms:<region>:<account>:key/<id>` (or `alias/<name>`). Copy it
+  `arn:aws:kms:<region>:<account>:key/<id>`. Aliases must also be given as
+  a full ARN (`arn:aws:kms:<region>:<account>:alias/<name>`), not the bare
+  `alias/<name>` form `aws kms` subcommands otherwise accept. Copy it
   exactly from `aws kms describe-key`'s output.
 - "awskms: AWS SSO session has expired or is invalid — run `aws sso
   login` first" — exactly that: the cached SSO token for this profile
