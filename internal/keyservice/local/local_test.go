@@ -69,11 +69,92 @@ func TestProvider_Decrypt_WrongIdentityFails(t *testing.T) {
 func TestDefaultIdentityPath(t *testing.T) {
 	path, err := DefaultIdentityPath()
 	require.NoError(t, err)
-	require.True(t, strings.HasSuffix(path, filepath.Join("git-vault", "local", "identity.txt")))
+	require.True(t, strings.HasSuffix(path, filepath.Join("git-vault", "local", "identities")))
 }
 
 func TestNew_UsesDefaultIdentityPath(t *testing.T) {
 	p, err := New()
 	require.NoError(t, err)
-	require.True(t, strings.HasSuffix(p.IdentityPath, filepath.Join("git-vault", "local", "identity.txt")))
+	require.True(t, strings.HasSuffix(p.IdentityPath, filepath.Join("git-vault", "local", "identities")))
+}
+
+func TestProvider_Rotate_OlderIdentityStillDecrypts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+	p := &Provider{IdentityPath: path}
+
+	oldRecipient, err := p.Recipient()
+	require.NoError(t, err)
+
+	ciphertext, err := p.Encrypt(context.Background(), oldRecipient, []byte("secret"))
+	require.NoError(t, err)
+
+	newRecipient, err := p.Rotate()
+	require.NoError(t, err)
+	require.NotEqual(t, oldRecipient, newRecipient)
+
+	// Recipient() now reports the newest identity.
+	current, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, newRecipient, current)
+
+	// The file the old ciphertext names as its recipient still decrypts.
+	got, err := p.Decrypt(context.Background(), oldRecipient, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret"), got)
+
+	// New ciphertext targets the new recipient.
+	newCiphertext, err := p.Encrypt(context.Background(), newRecipient, []byte("secret2"))
+	require.NoError(t, err)
+	got2, err := p.Decrypt(context.Background(), newRecipient, newCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret2"), got2)
+}
+
+func TestProvider_Rotate_TwiceKeepsBothOlderIdentities(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+	p := &Provider{IdentityPath: path}
+
+	r1, err := p.Recipient()
+	require.NoError(t, err)
+	c1, err := p.Encrypt(context.Background(), r1, []byte("v1"))
+	require.NoError(t, err)
+
+	r2, err := p.Rotate()
+	require.NoError(t, err)
+	c2, err := p.Encrypt(context.Background(), r2, []byte("v2"))
+	require.NoError(t, err)
+
+	r3, err := p.Rotate()
+	require.NoError(t, err)
+
+	got1, err := p.Decrypt(context.Background(), r1, c1)
+	require.NoError(t, err)
+	require.Equal(t, []byte("v1"), got1)
+
+	got2, err := p.Decrypt(context.Background(), r2, c2)
+	require.NoError(t, err)
+	require.Equal(t, []byte("v2"), got2)
+
+	current, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, r3, current)
+}
+
+func TestProvider_Decrypt_UnknownKeyIDFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+	p := &Provider{IdentityPath: path}
+	_, err := p.Recipient()
+	require.NoError(t, err)
+
+	_, err = p.Decrypt(context.Background(), "age1thisdoesnotexist", []byte("ciphertext"))
+	require.ErrorContains(t, err, "no stored identity")
+}
+
+func TestIdentityPathEnvVar_OverridesDefault(t *testing.T) {
+	custom := filepath.Join(t.TempDir(), "custom-identities")
+	t.Setenv(IdentityPathEnvVar, custom)
+
+	p, err := New()
+	require.NoError(t, err)
+	require.Equal(t, custom, p.IdentityPath)
 }
