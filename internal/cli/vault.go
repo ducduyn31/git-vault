@@ -7,6 +7,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -68,6 +69,22 @@ func newGCPKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
 	return vault.New(server), []string{gcpkms.Name + ":" + cfg.KeyResourceID}, nil
 }
 
+// newAzureKMSVault builds a Vault dispatching to Azure Key Vault, along
+// with the "<provider>:<key-id>" recipient string for cfg.KeyResourceID
+// (a fully-qualified Key Vault key URL, version included). Unlike
+// local/passphrase, the key material lives entirely in Azure — this
+// Provider holds no identity of its own beyond whatever
+// DefaultAzureCredential resolves to.
+func newAzureKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
+	registry := keyservice.NewRegistry()
+	if err := registry.Register(azurekms.New()); err != nil {
+		return nil, nil, err
+	}
+	server := keyservice.NewServer(registry)
+
+	return vault.New(server), []string{azurekms.Name + ":" + cfg.KeyResourceID}, nil
+}
+
 // vaultForProvider builds the Vault for the provider named in cfg. It
 // takes the full config, not just the provider name, because gcpkms
 // needs KeyResourceID — local/passphrase ignore everything but
@@ -80,6 +97,8 @@ func vaultForProvider(cfg config.Config) (*vault.Vault, []string, error) {
 		return newPassphraseVault()
 	case gcpkms.Name:
 		return newGCPKMSVault(cfg)
+	case azurekms.Name:
+		return newAzureKMSVault(cfg)
 	default:
 		return nil, nil, fmt.Errorf("git vault: unknown provider %q in %s", cfg.Provider, config.DefaultFileName)
 	}
