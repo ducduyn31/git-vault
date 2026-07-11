@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/gitattr"
+	"github.com/ducduyn31/git-vault/internal/ui"
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
@@ -36,22 +37,20 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			for _, f := range files {
+			rows := make([][2]string, len(files))
+			for i, f := range files {
 				sealed, sealErr := vault.IsSealed(f)
 				if sealErr != nil {
-					if _, err := fmt.Fprintf(out, "%s\terror: %v\n", f, sealErr); err != nil {
-						return err
-					}
+					rows[i] = [2]string{f, fmt.Sprintf("error: %v", sealErr)}
 					continue
 				}
 				state := "plaintext"
 				if sealed {
 					state = "encrypted"
 				}
-				if _, err := fmt.Fprintf(out, "%s\t%s\n", f, state); err != nil {
-					return err
-				}
+				rows[i] = [2]string{f, state}
 			}
+			ui.Table(out, rows)
 			return nil
 		},
 	}
