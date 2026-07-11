@@ -9,6 +9,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
+	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
 // newMigrateCmd re-seals every tracked file from the repo's current
@@ -77,12 +78,9 @@ func newMigrateCmd() *cobra.Command {
 				return fmt.Errorf("git vault migrate: write %s: %w", config.DefaultFileName, err)
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(),
-				"Migrated %d file(s) from %q to %q.\nWorking tree is now sealed under %q; run `git add -A && git commit` to finish — committed ciphertext still needs %q until you do.\n",
-				len(files), cfg.Provider, target, target, cfg.Provider)
-			if err != nil {
-				return fmt.Errorf("git vault migrate: print summary: %w", err)
-			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
+				"Migrated %d file(s) from %q to %q.\nWorking tree is now sealed under %q; run `git add -A && git commit` to finish — committed ciphertext still needs %q until you do.",
+				len(files), cfg.Provider, target, target, cfg.Provider))
 			return nil
 		},
 	}

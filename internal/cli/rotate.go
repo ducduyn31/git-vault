@@ -9,6 +9,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
+	"github.com/ducduyn31/git-vault/internal/ui"
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
@@ -95,12 +96,9 @@ func newRotateCmd() *cobra.Command {
 			case passphrase.Name:
 				followUp = "Distribute the new passphrase to your team out-of-band, and keep GIT_VAULT_PASSPHRASE set to the old value followed by the new value (one per line) until everyone has migrated — then the old line can be dropped."
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(),
-				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.\n",
-				len(files), cfg.Provider, followUp)
-			if err != nil {
-				return fmt.Errorf("git vault rotate: print summary: %w", err)
-			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
+				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.",
+				len(files), cfg.Provider, followUp))
 			return nil
 		},
 	}
