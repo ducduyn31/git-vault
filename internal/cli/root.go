@@ -15,6 +15,7 @@ func NewRootCmd() *cobra.Command {
 		newLoginCmd(),
 		newTrackCmd(),
 		newInstallCmd(),
+		newMigrateCmd(),
 		newRotateCmd(),
 		newEncryptCmd(),
 		newDecryptCmd(),
