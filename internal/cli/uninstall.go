@@ -14,6 +14,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/session"
+	"github.com/ducduyn31/git-vault/internal/ui"
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
@@ -91,22 +92,15 @@ func newUninstallCmd() *cobra.Command {
 			if global {
 				scope = "global"
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Uninstalled git-vault filter driver (%s scope).\n", scope); err != nil {
-				return fmt.Errorf("git vault uninstall: %w", err)
-			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Uninstalled git-vault filter driver (%s scope).", scope))
 
 			if len(plaintext) > 0 {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Warning: %d file(s) tracked by git-vault are currently plaintext and no longer protected now that the filter driver is unregistered:\n", len(plaintext)); err != nil {
-					return fmt.Errorf("git vault uninstall: %w", err)
-				}
+				warn := fmt.Sprintf("%d file(s) tracked by git-vault are currently plaintext and no longer protected now that the filter driver is unregistered:", len(plaintext))
 				for _, f := range plaintext {
-					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", f); err != nil {
-						return fmt.Errorf("git vault uninstall: %w", err)
-					}
+					warn += "\n  " + f
 				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "They will be committed as plaintext if staged before you reinstall (`git vault install`) or handle them manually."); err != nil {
-					return fmt.Errorf("git vault uninstall: %w", err)
-				}
+				warn += "\nThey will be committed as plaintext if staged before you reinstall (`git vault install`) or handle them manually."
+				ui.Warn(cmd.OutOrStdout(), warn)
 			}
 			return nil
 		},

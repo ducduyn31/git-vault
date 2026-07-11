@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -95,6 +96,34 @@ func loadConfig() (config.Config, error) {
 		return config.Config{}, fmt.Errorf("git vault: read %s: %w", config.DefaultFileName, err)
 	}
 	return cfg, nil
+}
+
+// resealTracked decrypts every git-vault-tracked file through from and
+// re-seals it through to under recipients, returning how many files were
+// processed. migrate and rotate share this — their only difference is
+// which vaults they pass. Zero tracked patterns is not an error: nothing
+// to re-seal.
+func resealTracked(from, to *vault.Vault, recipients []string) (int, error) {
+	patterns, err := gitattr.Tracked(".gitattributes")
+	if err != nil {
+		return 0, err
+	}
+	if len(patterns) == 0 {
+		return 0, nil
+	}
+	files, err := trackedFiles(patterns)
+	if err != nil {
+		return 0, err
+	}
+	for _, f := range files {
+		if err := from.Open(f); err != nil {
+			return 0, fmt.Errorf("decrypt %s: %w", f, err)
+		}
+		if err := to.Seal(f, recipients); err != nil {
+			return 0, fmt.Errorf("re-seal %s: %w", f, err)
+		}
+	}
+	return len(files), nil
 }
 
 // newVault loads .git-vault.yaml and builds the Vault for whichever

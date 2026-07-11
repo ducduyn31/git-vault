@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
-	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
@@ -62,25 +61,9 @@ func newMigrateCmd() *cobra.Command {
 				return fmt.Errorf("git vault migrate: target is identical to the current key (%s); nothing to migrate", oldRecipients[0])
 			}
 
-			patterns, err := gitattr.Tracked(".gitattributes")
+			n, err := resealTracked(oldVault, newVault, newRecipients)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
-			}
-			var files []string
-			if len(patterns) > 0 {
-				files, err = trackedFiles(patterns)
-				if err != nil {
-					return fmt.Errorf("git vault migrate: %w", err)
-				}
-			}
-
-			for _, f := range files {
-				if err := oldVault.Open(f); err != nil {
-					return fmt.Errorf("git vault migrate: decrypt %s under %q: %w", f, cfg.Provider, err)
-				}
-				if err := newVault.Seal(f, newRecipients); err != nil {
-					return fmt.Errorf("git vault migrate: re-seal %s under %q: %w", f, target, err)
-				}
 			}
 
 			if err := config.Save(config.DefaultFileName, targetCfg); err != nil {
@@ -89,7 +72,8 @@ func newMigrateCmd() *cobra.Command {
 
 			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
 				"Migrated %d file(s) from %q to %q.\nWorking tree is now sealed under %q; run `git add -A && git commit` to finish — committed ciphertext still needs %q until you do.",
-				len(files), cfg.Provider, target, target, cfg.Provider))
+				n, cfg.Provider, target, target, cfg.Provider,
+			))
 			return nil
 		},
 	}
