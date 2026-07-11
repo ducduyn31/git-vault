@@ -200,8 +200,8 @@ git commit -m "feat: add config-driven provider dispatch (local/passphrase)"
 - Test: `internal/cli/install_test.go` (append new tests)
 
 **Interfaces:**
-- Consumes: `config.Save(path string, c config.Config) error`, `config.Load`, `config.DefaultFileName`, `config.Config` (Task 1's imports, already proven to exist). `passphrase.Name`, `passphrase.EnvVar`. `local.Name`, `local.New()`, `(*local.Provider).Recipient()`. `chdirTemp(t *testing.T)` (already defined in this same file).
-- Produces: `recipientForProvider(name string) (string, error)` — used only inside `install.go`'s `RunE`; not consumed by later tasks.
+- Consumes: `vaultForProvider(name string) (*vault.Vault, []string, error)` from Task 1 — its `[]string` return is already exactly the `"<provider>:<key-id>"` recipient install needs to print (`newLocalVault`/`newPassphraseVault` both return a single-element slice), so install reuses it instead of re-implementing the local/passphrase switch. `config.Save(path string, c config.Config) error`, `config.DefaultFileName`, `config.Config` (from Task 1's imports). `passphrase.Name`, `passphrase.EnvVar`. `local.Name`. `chdirTemp(t *testing.T)` (already defined in this same file).
+- Produces: nothing new for later tasks — `install.go`'s `RunE` is the only consumer of what it builds here.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -280,7 +280,7 @@ Add these imports to `internal/cli/install_test.go` (merge with what's already t
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `go test ./internal/cli/... -run TestInstallCmd -v`
-Expected: FAIL — `TestInstallCmd_Passphrase_WritesConfigAndRecipient` and `TestInstallCmd_UnknownProviderFails` fail because `--provider` isn't a registered flag yet (cobra reports `unknown flag: --provider`); `TestInstallCmd_DefaultProvider_WritesLocalConfig` fails because `config.Load` errors (file not written).
+Expected: FAIL for all four new tests — `--provider` isn't a registered flag yet, so cobra rejects it with `unknown flag: --provider` before `RunE` ever runs. That makes `TestInstallCmd_Passphrase_WritesConfigAndRecipient` fail (no `Recipient:` in output, no `.git-vault.yaml` written), `TestInstallCmd_Passphrase_MissingEnvVarFailsBeforeGitConfig` fail (the error is about the unknown flag, not `GIT_VAULT_PASSPHRASE`), `TestInstallCmd_UnknownProviderFails` fail (error is about the unknown flag, not `unknown provider "bogus"`), and `TestInstallCmd_DefaultProvider_WritesLocalConfig` fail (`config.Load` errors — no file was written).
 
 - [ ] **Step 3: Implement `--provider` and the config write**
 
@@ -320,10 +320,16 @@ func newInstallCmd() *cobra.Command {
 				return fmt.Errorf("git vault install: %s not set", passphrase.EnvVar)
 			}
 
-			recipient, err := recipientForProvider(providerName)
+			// vaultForProvider both validates providerName (its default
+			// case errors on anything unknown) and resolves the
+			// "<provider>:<key-id>" recipient to print, via the same
+			// switch newVault() uses at encrypt/decrypt/clean/smudge time
+			// — no separate recipient-resolution switch needed here.
+			_, recipients, err := vaultForProvider(providerName)
 			if err != nil {
 				return fmt.Errorf("git vault install: %w", err)
 			}
+			recipient := recipients[0]
 
 			settings := []struct{ key, value string }{
 				{"filter.git-vault.clean", "git-vault clean %f"},
@@ -353,29 +359,6 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
 	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase)")
 	return cmd
-}
-
-// recipientForProvider resolves the "<provider>:<key-id>" recipient
-// string to print after install. It also doubles as install's provider
-// name validation: an unknown name hits the default case below before
-// any git config or .git-vault.yaml is written.
-func recipientForProvider(name string) (string, error) {
-	switch name {
-	case local.Name:
-		provider, err := local.New()
-		if err != nil {
-			return "", err
-		}
-		recipient, err := provider.Recipient()
-		if err != nil {
-			return "", err
-		}
-		return local.Name + ":" + recipient, nil
-	case passphrase.Name:
-		return passphrase.Name + ":" + passphrase.KeyID, nil
-	default:
-		return "", fmt.Errorf("unknown provider %q", name)
-	}
 }
 
 func setGitConfig(global bool, key, value string) error {
