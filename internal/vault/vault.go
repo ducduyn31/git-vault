@@ -70,8 +70,13 @@ func (v *Vault) Open(path string) error {
 }
 
 // SealStream encrypts r (formatted per format), writing the sealed result
-// to w. Used later by git's clean filter, which gets file content on
+// to w. Used by git's clean filter, which gets file content on
 // stdin/stdout rather than a real path.
+//
+// If r is already a valid sops-encrypted document for format, it is
+// written through to w unchanged instead of being sealed again — git can
+// re-invoke clean on already-sealed content (e.g. during a merge/rebase
+// re-apply), and sealing it a second time would double-wrap it.
 func (v *Vault) SealStream(w io.Writer, r io.Reader, format Format, recipients []string) error {
 	if len(recipients) == 0 {
 		return fmt.Errorf("vault: seal: no recipients provided")
@@ -83,6 +88,14 @@ func (v *Vault) SealStream(w io.Writer, r io.Reader, format Format, recipients [
 	}
 
 	store := storeForFormat(format)
+
+	if _, err := store.LoadEncryptedFile(plaintext); err == nil {
+		if _, err := w.Write(plaintext); err != nil {
+			return fmt.Errorf("vault: write ciphertext: %w", err)
+		}
+		return nil
+	}
+
 	branches, err := store.LoadPlainFile(plaintext)
 	if err != nil {
 		return fmt.Errorf("vault: parse plaintext: %w", err)
@@ -129,7 +142,12 @@ func (v *Vault) SealStream(w io.Writer, r io.Reader, format Format, recipients [
 }
 
 // OpenStream decrypts r (formatted per format), writing the plaintext to
-// w. Used later by git's smudge filter.
+// w. Used by git's smudge filter.
+//
+// If r has no sops metadata for format (e.g. a file committed before
+// git-vault install was ever run), it is written through to w unchanged
+// instead of erroring — only a failure decrypting an actual sops tree
+// (bad key, tampered MAC) is a real error.
 func (v *Vault) OpenStream(w io.Writer, r io.Reader, format Format) error {
 	ciphertext, err := io.ReadAll(r)
 	if err != nil {
@@ -139,7 +157,10 @@ func (v *Vault) OpenStream(w io.Writer, r io.Reader, format Format) error {
 	store := storeForFormat(format)
 	tree, err := store.LoadEncryptedFile(ciphertext)
 	if err != nil {
-		return fmt.Errorf("vault: parse ciphertext: %w", err)
+		if _, err := w.Write(ciphertext); err != nil {
+			return fmt.Errorf("vault: write plaintext: %w", err)
+		}
+		return nil
 	}
 
 	dataKey, err := tree.Metadata.GetDataKeyWithKeyServices(v.clients, nil)
