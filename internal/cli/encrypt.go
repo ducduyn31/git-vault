@@ -1,10 +1,6 @@
 package cli
 
-import (
-	"fmt"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newEncryptCmd() *cobra.Command {
 	return &cobra.Command{
@@ -12,7 +8,11 @@ func newEncryptCmd() *cobra.Command {
 		Short: "Encrypt a file in place, outside the filter path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("git vault encrypt: not implemented in scaffold")
+			v, recipients, err := newLocalVault()
+			if err != nil {
+				return err
+			}
+			return v.Seal(args[0], recipients)
 		},
 	}
 }

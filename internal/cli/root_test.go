@@ -33,8 +33,6 @@ func TestStubCommands_NotImplemented(t *testing.T) {
 	}{
 		{"login", []string{"login"}},
 		{"install", []string{"install"}},
-		{"encrypt", []string{"encrypt", "file.txt"}},
-		{"decrypt", []string{"decrypt", "file.txt"}},
 		{"clean", []string{"clean", "file.txt"}},
 		{"smudge", []string{"smudge", "file.txt"}},
 		{"status", []string{"status"}},
