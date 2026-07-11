@@ -134,3 +134,30 @@ func TestInstallCmd_DefaultProvider_WritesLocalConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, local.Name, cfg.Provider)
 }
+
+// setupTrackedEncryptedFile writes .git-vault.yaml directly (not via
+// runInstall — install also sets filter.git-vault.* git config pointing at
+// a real git-vault binary that isn't built under `go test`, which would
+// make the "git add" below try to invoke it), tracks "secret.yaml", writes
+// and git-adds it, then encrypts it under the given provider. Returns the
+// plaintext it started from.
+func setupTrackedEncryptedFile(t *testing.T, provider string) string {
+	t.Helper()
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: provider}))
+
+	trackCmd := NewRootCmd()
+	trackCmd.SetOut(&bytes.Buffer{})
+	trackCmd.SetArgs([]string{"track", "secret.yaml"})
+	require.NoError(t, trackCmd.Execute())
+
+	original := "password: hunter2\n"
+	require.NoError(t, os.WriteFile("secret.yaml", []byte(original), 0o644))
+	require.NoError(t, exec.Command("git", "add", "secret.yaml").Run())
+
+	encryptCmd := NewRootCmd()
+	encryptCmd.SetOut(&bytes.Buffer{})
+	encryptCmd.SetArgs([]string{"encrypt", "secret.yaml"})
+	require.NoError(t, encryptCmd.Execute())
+
+	return original
+}
