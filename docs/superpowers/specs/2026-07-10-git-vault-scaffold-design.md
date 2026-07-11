@@ -103,6 +103,7 @@ internal/config/        which provider(s)/keyservice endpoint to use, session se
 ```
 
 Each package has one job:
+
 - `internal/keyservice` never knows about git or file formats — it's a
   sops KeyServiceServer plus a `Provider` registry.
 - `internal/vault` never knows about providers or SSO — it only knows how
