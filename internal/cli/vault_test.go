@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
@@ -23,14 +25,30 @@ func TestNewLocalVault_ReturnsVaultAndRecipient(t *testing.T) {
 func TestVaultForProvider_Passphrase(t *testing.T) {
 	t.Setenv(passphrase.EnvVar, "correct horse battery staple")
 
-	v, recipients, err := vaultForProvider(passphrase.Name)
+	v, recipients, err := vaultForProvider(config.Config{Provider: passphrase.Name})
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"passphrase:shared"}, recipients)
 }
 
+func TestVaultForProvider_GCPKMS(t *testing.T) {
+	opts, cleanup, err := gcpkmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := gcpkms.SetClientOptionsForTesting(opts)
+	defer restore()
+
+	v, recipients, err := vaultForProvider(config.Config{
+		Provider:      gcpkms.Name,
+		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/test",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	require.Equal(t, []string{"gcpkms:projects/test/locations/global/keyRings/test/cryptoKeys/test"}, recipients)
+}
+
 func TestVaultForProvider_UnknownProviderFails(t *testing.T) {
-	_, _, err := vaultForProvider("bogus")
+	_, _, err := vaultForProvider(config.Config{Provider: "bogus"})
 	require.ErrorContains(t, err, `unknown provider "bogus"`)
 }
 

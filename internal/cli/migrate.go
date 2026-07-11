@@ -43,11 +43,11 @@ func newMigrateCmd() *cobra.Command {
 				return fmt.Errorf("git vault migrate: %s not set", passphrase.EnvVar)
 			}
 
-			oldVault, _, err := vaultForProvider(cfg.Provider)
+			oldVault, _, err := vaultForProvider(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
-			newVault, newRecipients, err := vaultForProvider(target)
+			newVault, newRecipients, err := vaultForProvider(config.Config{Provider: target})
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
