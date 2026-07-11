@@ -41,3 +41,9 @@ tasks:
     desc: Install the git-vault binary to GOBIN
     cmds:
       - go install {{.PKG}}
+
+  clean:
+    desc: Remove the built binary and uninstall it from GOBIN if installed
+    cmds:
+      - rm -f {{.BIN}}
+      - rm -f "$(go env GOBIN)/{{.BIN}}" "$(go env GOPATH)/bin/{{.BIN}}"
