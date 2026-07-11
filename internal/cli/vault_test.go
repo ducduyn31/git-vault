@@ -9,6 +9,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -63,6 +65,20 @@ func TestVaultForProvider_AWSKMS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"awskms:arn:aws:kms:us-east-1:111111111111:key/test"}, recipients)
+}
+
+func TestVaultForProvider_AzureKMS(t *testing.T) {
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	v, recipients, err := vaultForProvider(config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/test-key/v1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, v)
+	require.Equal(t, []string{"azurekms:https://test.vault.azure.net/keys/test-key/v1"}, recipients)
 }
 
 func TestVaultForProvider_UnknownProviderFails(t *testing.T) {
