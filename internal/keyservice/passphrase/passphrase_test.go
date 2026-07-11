@@ -113,6 +113,39 @@ func TestProvider_Decrypt_PromptedWhenEnvUnset(t *testing.T) {
 	require.Equal(t, []byte("secret"), got)
 }
 
+func TestProvider_Ready_PromptsAndCachesForLaterCalls(t *testing.T) {
+	t.Setenv(EnvVar, "")
+	calls := 0
+	restore := SetPromptForTesting(func() (string, error) {
+		calls++
+		return "typed passphrase", nil
+	})
+	defer restore()
+
+	p := New()
+	require.NoError(t, p.Ready())
+	require.Equal(t, 1, calls, "Ready must prompt once")
+
+	ciphertext, err := p.Encrypt(context.Background(), KeyID, []byte("secret"))
+	require.NoError(t, err)
+	require.Equal(t, 1, calls, "a later Encrypt must reuse Ready's cached prompt, not prompt again")
+
+	got, err := p.Decrypt(context.Background(), KeyID, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret"), got)
+}
+
+func TestProvider_Ready_MissingEnvVarFails(t *testing.T) {
+	t.Setenv(EnvVar, "")
+	restore := SetPromptForTesting(func() (string, error) {
+		return "", fmt.Errorf("passphrase: %s not set and stdin is not a terminal to prompt for one", EnvVar)
+	})
+	defer restore()
+
+	err := New().Ready()
+	require.ErrorContains(t, err, EnvVar)
+}
+
 func TestNewWithSecret_BypassesEnvVar(t *testing.T) {
 	t.Setenv(EnvVar, "env passphrase")
 	p := NewWithSecret("explicit passphrase")

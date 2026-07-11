@@ -2,14 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
 // newMigrateCmd re-seals every tracked file from the repo's current
@@ -44,9 +42,6 @@ func newMigrateCmd() *cobra.Command {
 				return err
 			}
 
-			if target == passphrase.Name && os.Getenv(passphrase.EnvVar) == "" {
-				return fmt.Errorf("git vault migrate: %s not set", passphrase.EnvVar)
-			}
 			if target == gcpkms.Name && keyResourceID == "" {
 				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", gcpkms.Name)
 			}
