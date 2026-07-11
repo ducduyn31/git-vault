@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -165,6 +167,45 @@ func TestRotateCmd_GCPKMS_RoundTrip(t *testing.T) {
 	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
 		Provider:      gcpkms.Name,
 		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/test",
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.NotEqual(t, string(sealedBefore), string(sealedAfter), "rotate must force a fresh KMS Encrypt call")
+
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+}
+
+func TestRotateCmd_AWSKMS_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	hc, creds, cleanup, err := awskmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := awskms.SetTestOverridesForTesting(hc, creds)
+	defer restore()
+
+	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      awskms.Name,
+		KeyResourceID: "arn:aws:kms:us-east-1:111111111111:key/test",
 	})
 
 	sealedBefore, err := os.ReadFile("secret.yaml")
