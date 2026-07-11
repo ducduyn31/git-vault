@@ -11,9 +11,10 @@ import (
 func TestSaveLoad_RoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".git-vault.yaml")
 	want := Config{
-		Provider:  "sso",
-		IssuerURL: "https://issuer.example.com",
-		ClientID:  "git-vault-cli",
+		Provider:      "gcpkms",
+		IssuerURL:     "https://issuer.example.com",
+		ClientID:      "git-vault-cli",
+		KeyResourceID: "projects/p/locations/global/keyRings/r/cryptoKeys/k",
 	}
 
 	require.NoError(t, Save(path, want))

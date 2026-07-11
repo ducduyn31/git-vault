@@ -15,9 +15,10 @@ const DefaultFileName = ".git-vault.yaml"
 
 // Config holds git-vault's non-secret, repo-tracked settings.
 type Config struct {
-	Provider  string `yaml:"provider"`
-	IssuerURL string `yaml:"issuer_url,omitempty"`
-	ClientID  string `yaml:"client_id,omitempty"`
+	Provider      string `yaml:"provider"`
+	IssuerURL     string `yaml:"issuer_url,omitempty"`
+	ClientID      string `yaml:"client_id,omitempty"`
+	KeyResourceID string `yaml:"key_resource_id,omitempty"`
 }
 
 func Load(path string) (Config, error) {
