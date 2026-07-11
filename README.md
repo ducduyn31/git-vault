@@ -17,10 +17,11 @@ plaintext only ever touches disk in your working tree, never in git history.
 
 **Status:** early — encrypt/decrypt, the clean/smudge filter, status
 reporting, key rotation, and cross-provider migration all work today.
-GCP KMS is available as a first team key-sharing provider, authorized
-through your org's existing Google Workspace SSO — see
-[docs/gcpkms-provider.md](docs/gcpkms-provider.md). Other cloud
-providers (AWS, Azure) are on the roadmap.
+GCP KMS and AWS KMS are available as team key-sharing providers,
+authorized through your org's existing Google Workspace or AWS IAM
+Identity Center SSO — see [docs/gcpkms-provider.md](docs/gcpkms-provider.md)
+and [docs/awskms-provider.md](docs/awskms-provider.md). Azure is on the
+roadmap.
 
 ## Configure git-vault in a project
 
@@ -69,11 +70,13 @@ git vault encrypt secrets/prod.yaml
 git vault decrypt secrets/prod.yaml
 ```
 
-## Team key-sharing with GCP KMS
+## Team key-sharing with cloud KMS
 
 For a shared key backed by your org's existing SSO (rather than a local
 per-machine key or an out-of-band passphrase), see
-[docs/gcpkms-provider.md](docs/gcpkms-provider.md).
+[docs/gcpkms-provider.md](docs/gcpkms-provider.md) (Google Workspace SSO)
+or [docs/awskms-provider.md](docs/awskms-provider.md) (AWS IAM Identity
+Center / SSO).
 
 ## Development
 
