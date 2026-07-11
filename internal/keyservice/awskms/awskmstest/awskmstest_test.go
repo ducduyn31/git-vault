@@ -42,7 +42,7 @@ func TestFakeServer_Decrypt_TamperedCiphertextFails(t *testing.T) {
 	require.NoError(t, err)
 
 	resp := postFakeRequest(t, hc, "TrentService.Decrypt", decBody)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -60,7 +60,7 @@ func postFakeRequest(t *testing.T, hc *http.Client, target string, body []byte) 
 func doFakeRequest(t *testing.T, hc *http.Client, target string, body []byte, out any) {
 	t.Helper()
 	resp := postFakeRequest(t, hc, target, body)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	data, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
