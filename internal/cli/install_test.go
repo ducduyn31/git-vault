@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -244,6 +247,75 @@ func TestInstallCmd_GCPKMS_FailsWithoutReachableKMS(t *testing.T) {
 	cmd.SetArgs([]string{
 		"install", "--provider=" + gcpkms.Name,
 		"--key-resource-id=not-a-valid-resource-id",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+
+	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
+	require.Error(t, gitErr, "git config must not be set when install fails the KMS round trip")
+}
+
+func TestInstallCmd_AWSKMS_WritesConfigAndValidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	hc, creds, cleanup, err := awskmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := awskms.SetTestOverridesForTesting(hc, creds)
+	defer restore()
+
+	// SetTestOverridesForTesting injects fake creds/HTTP client, but the
+	// AWS SDK's config.LoadDefaultConfig still validates that
+	// --aws-profile names a profile section that exists in the shared
+	// AWS config file — that check runs independently of the
+	// credentials override. Give it one, scoped to this test via
+	// AWS_CONFIG_FILE rather than relying on $HOME/.aws/config.
+	awsConfigFile := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(awsConfigFile, []byte("[profile team-sso]\nregion = us-east-1\n"), 0o644))
+	t.Setenv("AWS_CONFIG_FILE", awsConfigFile)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"install", "--provider=" + awskms.Name,
+		"--key-resource-id=arn:aws:kms:us-east-1:111111111111:key/test",
+		"--aws-profile=team-sso",
+	})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "Recipient: awskms:arn:aws:kms:us-east-1:111111111111:key/test")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, awskms.Name, cfg.Provider)
+	require.Equal(t, "arn:aws:kms:us-east-1:111111111111:key/test", cfg.KeyResourceID)
+	require.Equal(t, "team-sso", cfg.AwsProfile)
+}
+
+func TestInstallCmd_AWSKMS_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--provider=" + awskms.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestInstallCmd_AWSKMS_FailsWithoutReachableKMS(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"install", "--provider=" + awskms.Name,
+		"--key-resource-id=not-an-arn",
 	})
 
 	err := cmd.Execute()

@@ -7,6 +7,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
@@ -68,6 +69,21 @@ func newGCPKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
 	return vault.New(server), []string{gcpkms.Name + ":" + cfg.KeyResourceID}, nil
 }
 
+// newAWSKMSVault builds a Vault dispatching to AWS KMS, along with the
+// "<provider>:<key-id>" recipient string for cfg.KeyResourceID (an AWS
+// KMS ARN). Unlike local/passphrase, the key material lives entirely in
+// AWS — this Provider holds no identity of its own beyond whatever the
+// default AWS credential chain (or cfg.AwsProfile) resolves to.
+func newAWSKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
+	registry := keyservice.NewRegistry()
+	if err := registry.Register(awskms.New(cfg.AwsProfile)); err != nil {
+		return nil, nil, err
+	}
+	server := keyservice.NewServer(registry)
+
+	return vault.New(server), []string{awskms.Name + ":" + cfg.KeyResourceID}, nil
+}
+
 // vaultForProvider builds the Vault for the provider named in cfg. It
 // takes the full config, not just the provider name, because gcpkms
 // needs KeyResourceID — local/passphrase ignore everything but
@@ -80,6 +96,8 @@ func vaultForProvider(cfg config.Config) (*vault.Vault, []string, error) {
 		return newPassphraseVault()
 	case gcpkms.Name:
 		return newGCPKMSVault(cfg)
+	case awskms.Name:
+		return newAWSKMSVault(cfg)
 	default:
 		return nil, nil, fmt.Errorf("git vault: unknown provider %q in %s", cfg.Provider, config.DefaultFileName)
 	}

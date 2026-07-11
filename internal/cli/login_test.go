@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/awskms/awskmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -134,4 +136,96 @@ func TestAttemptGcloudLogin_AutoLoginStillNeedsGcloud(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
 	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString(""), out), true))
+}
+
+func TestLoginCmd_AWSKMS_Succeeds(t *testing.T) {
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      awskms.Name,
+		KeyResourceID: "arn:aws:kms:us-east-1:111111111111:key/test",
+	}))
+
+	hc, creds, cleanup, err := awskmstest.NewFakeServer()
+	require.NoError(t, err)
+	defer cleanup()
+	restore := awskms.SetTestOverridesForTesting(hc, creds)
+	defer restore()
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"login"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "authorized")
+}
+
+func TestLoginCmd_AWSKMS_FailsWithoutReachableKMS(t *testing.T) {
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      awskms.Name,
+		KeyResourceID: "not-an-arn",
+	}))
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"login"})
+	require.Error(t, cmd.Execute())
+}
+
+func fakeAwsCLI(t *testing.T, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake aws script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "aws")
+	contents := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	require.NoError(t, os.WriteFile(script, []byte(contents), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestAttemptAWSSSOLogin_NoAWSCLIOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "", false))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptAWSSSOLogin_Declined(t *testing.T) {
+	fakeAwsCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("n\n"), out), "", false))
+	require.Contains(t, out.String(), "Run `aws sso login` now?")
+}
+
+func TestAttemptAWSSSOLogin_ConfirmedAndCLISucceeds(t *testing.T) {
+	fakeAwsCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "", false))
+}
+
+func TestAttemptAWSSSOLogin_ConfirmedButCLIFails(t *testing.T) {
+	fakeAwsCLI(t, 1)
+	out := &bytes.Buffer{}
+	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("yes\n"), out), "", false))
+}
+
+func TestAttemptAWSSSOLogin_AutoLoginSkipsPrompt(t *testing.T) {
+	fakeAwsCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString(""), out), "", true))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptAWSSSOLogin_AutoLoginStillNeedsCLI(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString(""), out), "", true))
+}
+
+func TestAttemptAWSSSOLogin_IncludesProfileInPrompt(t *testing.T) {
+	fakeAwsCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "team-sso", false))
+	require.Contains(t, out.String(), "aws sso login --profile team-sso")
 }
