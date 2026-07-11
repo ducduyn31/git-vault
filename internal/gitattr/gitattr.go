@@ -35,6 +35,21 @@ func Track(path, pattern string) error {
 	return writeLines(path, lines)
 }
 
+// isGitVaultLine reports whether line is a git-vault filter attribute line
+// (as written by Track / attrLine), regardless of which pattern it names.
+func isGitVaultLine(line string) bool {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return false
+	}
+	for _, f := range fields[1:] {
+		if f == "filter=git-vault" {
+			return true
+		}
+	}
+	return false
+}
+
 // Tracked returns the patterns tracked by git-vault's filter in the
 // .gitattributes file at path. It returns an empty slice if path doesn't
 // exist.
@@ -46,18 +61,32 @@ func Tracked(path string) ([]string, error) {
 
 	var patterns []string
 	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		for _, f := range fields[1:] {
-			if f == "filter=git-vault" {
-				patterns = append(patterns, fields[0])
-				break
-			}
+		if isGitVaultLine(line) {
+			patterns = append(patterns, strings.Fields(line)[0])
 		}
 	}
 	return patterns, nil
+}
+
+// Untrack removes every git-vault attribute line from the .gitattributes
+// file at path, leaving any other lines (other filters, comments) untouched.
+// It is a no-op if path doesn't exist or has no git-vault lines.
+func Untrack(path string) error {
+	lines, err := readLines(path)
+	if err != nil {
+		return err
+	}
+
+	var kept []string
+	for _, line := range lines {
+		if !isGitVaultLine(line) {
+			kept = append(kept, line)
+		}
+	}
+	if len(kept) == len(lines) {
+		return nil
+	}
+	return writeLines(path, kept)
 }
 
 func readLines(path string) ([]string, error) {

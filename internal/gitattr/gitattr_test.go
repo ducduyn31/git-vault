@@ -49,3 +49,38 @@ func TestTracked_MissingFileReturnsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, patterns)
 }
+
+func TestUntrack_RemovesGitVaultLinesOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitattributes")
+	content := "*.bin binary\n" +
+		"secrets/*.yaml filter=git-vault diff=git-vault -text\n" +
+		"*.lfs filter=lfs diff=lfs merge=lfs -text\n" +
+		"config/*.env filter=git-vault diff=git-vault -text\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	require.NoError(t, Untrack(path))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "*.bin binary\n*.lfs filter=lfs diff=lfs merge=lfs -text\n", string(got))
+}
+
+func TestUntrack_NoopWhenNothingTracked(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitattributes")
+	require.NoError(t, os.WriteFile(path, []byte("*.bin binary\n"), 0o644))
+
+	require.NoError(t, Untrack(path))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "*.bin binary\n", string(got))
+}
+
+func TestUntrack_MissingFileIsNoop(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitattributes")
+
+	require.NoError(t, Untrack(path))
+
+	_, err := os.Stat(path)
+	require.True(t, os.IsNotExist(err))
+}
