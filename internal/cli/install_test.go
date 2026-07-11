@@ -145,7 +145,15 @@ func TestInstallCmd_DefaultProvider_WritesLocalConfig(t *testing.T) {
 // plaintext it started from.
 func setupTrackedEncryptedFile(t *testing.T, provider string) string {
 	t.Helper()
-	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: provider}))
+	return setupTrackedEncryptedFileWithConfig(t, config.Config{Provider: provider})
+}
+
+// setupTrackedEncryptedFileWithConfig is setupTrackedEncryptedFile, but
+// for providers (e.g. gcpkms) that need more than just a provider name
+// persisted to .git-vault.yaml.
+func setupTrackedEncryptedFileWithConfig(t *testing.T, cfg config.Config) string {
+	t.Helper()
+	require.NoError(t, config.Save(config.DefaultFileName, cfg))
 
 	trackCmd := NewRootCmd()
 	trackCmd.SetOut(&bytes.Buffer{})

@@ -8,6 +8,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
+	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 	"github.com/ducduyn31/git-vault/internal/vault"
@@ -64,6 +65,17 @@ func newRotateCmd() *cobra.Command {
 				}
 				newVault = vault.New(keyservice.NewServer(registry))
 				newRecipients = []string{passphrase.Name + ":" + passphrase.KeyID}
+			case gcpkms.Name:
+				// The resource ID never changes across a GCP-side rotation — only
+				// which key version is primary does, invisible to git-vault.
+				// Re-sealing every file forces a fresh KMS Encrypt call, which GCP
+				// always services with the current primary version, moving every
+				// file's wrapped data key off whatever version it was on before.
+				newVault, newRecipients, err = vaultForProvider(cfg)
+				if err != nil {
+					return fmt.Errorf("git vault rotate: %w", err)
+				}
+				oldVault = newVault
 			default:
 				return fmt.Errorf("git vault rotate: rotation not supported for provider %q", cfg.Provider)
 			}
@@ -95,6 +107,8 @@ func newRotateCmd() *cobra.Command {
 				followUp = "Old identity is retained to decrypt anything not yet migrated (including committed history)."
 			case passphrase.Name:
 				followUp = "Distribute the new passphrase to your team out-of-band, and keep GIT_VAULT_PASSPHRASE set to the old value followed by the new value (one per line) until everyone has migrated — then the old line can be dropped."
+			case gcpkms.Name:
+				followUp = "Old KMS key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable or destroy the old version(s) in GCP to complete the rotation."
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(),
 				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.\n",
