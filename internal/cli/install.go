@@ -10,6 +10,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
+	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
 func newInstallCmd() *cobra.Command {
@@ -61,9 +62,7 @@ func newInstallCmd() *cobra.Command {
 			if global {
 				scope = "global"
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Installed git-vault filter driver (%s scope).\nRecipient: %s\n", scope, recipient); err != nil {
-				return fmt.Errorf("git vault install: print recipient: %w", err)
-			}
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Installed git-vault filter driver (%s scope).\nRecipient: %s", scope, recipient))
 			return nil
 		},
 	}
