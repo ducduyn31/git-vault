@@ -20,6 +20,12 @@ type Config struct {
 	ClientID      string `yaml:"client_id,omitempty"`
 	KeyResourceID string `yaml:"key_resource_id,omitempty"`
 
+	// AwsProfile names a local AWS CLI profile (~/.aws/config) to use
+	// for credentials when Provider is awskms. Empty means the AWS
+	// SDK's default credential chain (env vars, default profile,
+	// instance role, etc). Ignored by every other provider.
+	AwsProfile string `yaml:"aws_profile,omitempty"`
+
 	// AutoLogin skips `git vault login`'s "run this for me?" confirmation
 	// prompt when the configured provider needs an external login step
 	// (currently: gcpkms's `gcloud auth application-default login`) and
