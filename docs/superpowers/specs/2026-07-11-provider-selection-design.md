@@ -101,13 +101,16 @@ flag's value, before any config file exists.
 Gains a `--provider` flag (default `"local"`), validated against the same
 two names via `vaultForProvider` before anything else happens:
 
-1. `vaultForProvider(providerName)` — builds the real provider. For
-   `passphrase` this reads `GIT_VAULT_PASSPHRASE` as part of building the
-   `age.ScryptRecipient`/`Identity` path indirectly (see
-   `passphrase.Provider`), so a missing passphrase fails install
-   immediately rather than surfacing later on the first real `encrypt`.
-   An unknown `--provider` value fails the same way, before touching git
-   config or the filesystem.
+1. `vaultForProvider(providerName)` — builds the real provider, and fails
+   immediately on an unknown `--provider` value, before touching git
+   config or the filesystem. Note this alone does *not* check
+   `GIT_VAULT_PASSPHRASE`: unlike `local.Provider.Recipient()`, which
+   eagerly generates/persists an identity, `passphrase.Provider` has no
+   equivalent eager step — its env var is only read inside
+   `Encrypt`/`Decrypt`. So for `providerName == passphrase.Name`, `install`
+   separately checks `os.Getenv(passphrase.EnvVar) != ""` right after
+   building the provider, to fail fast rather than surfacing a missing
+   passphrase later on the first real `encrypt`.
 2. Resolve the recipient to print:
    - `local`: `provider.Recipient()` as today.
    - `passphrase`: the fixed `passphrase.Name + ":" + passphrase.KeyID`.
