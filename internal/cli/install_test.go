@@ -36,6 +36,19 @@ func chdirTemp(t *testing.T) {
 	require.NoError(t, exec.Command("git", "init").Run())
 }
 
+func runInstall(t *testing.T) {
+	t.Helper()
+	runInstallWithArgs(t)
+}
+
+func runInstallWithArgs(t *testing.T, extraArgs ...string) {
+	t.Helper()
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs(append([]string{"install"}, extraArgs...))
+	require.NoError(t, cmd.Execute())
+}
+
 func TestInstallCmd_SetsRepoLocalFilterConfig(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	chdirTemp(t)
