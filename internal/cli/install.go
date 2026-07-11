@@ -2,11 +2,14 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/spf13/cobra"
 
+	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
+	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
 func newInstallCmd() *cobra.Command {
@@ -19,15 +22,25 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			providerName, err := cmd.Flags().GetString("provider")
+			if err != nil {
+				return err
+			}
 
-			provider, err := local.New()
+			if providerName == passphrase.Name && os.Getenv(passphrase.EnvVar) == "" {
+				return fmt.Errorf("git vault install: %s not set", passphrase.EnvVar)
+			}
+
+			// vaultForProvider both validates providerName (its default
+			// case errors on anything unknown) and resolves the
+			// "<provider>:<key-id>" recipient to print, via the same
+			// switch newVault() uses at encrypt/decrypt/clean/smudge time
+			// — no separate recipient-resolution switch needed here.
+			_, recipients, err := vaultForProvider(providerName)
 			if err != nil {
 				return fmt.Errorf("git vault install: %w", err)
 			}
-			recipient, err := provider.Recipient()
-			if err != nil {
-				return fmt.Errorf("git vault install: %w", err)
-			}
+			recipient := recipients[0]
 
 			settings := []struct{ key, value string }{
 				{"filter.git-vault.clean", "git-vault clean %f"},
@@ -40,17 +53,22 @@ func newInstallCmd() *cobra.Command {
 				}
 			}
 
+			if err := config.Save(config.DefaultFileName, config.Config{Provider: providerName}); err != nil {
+				return fmt.Errorf("git vault install: write %s: %w", config.DefaultFileName, err)
+			}
+
 			scope := "repo"
 			if global {
 				scope = "global"
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Installed git-vault filter driver (%s scope).\nRecipient: %s:%s\n", scope, local.Name, recipient); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Installed git-vault filter driver (%s scope).\nRecipient: %s\n", scope, recipient); err != nil {
 				return fmt.Errorf("git vault install: print recipient: %w", err)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
+	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase)")
 	return cmd
 }
 
