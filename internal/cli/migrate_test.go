@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ducduyn31/git-vault/internal/config"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -215,6 +217,80 @@ func TestMigrateCmd_GCPKMSTarget_MissingKeyResourceIDFails(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetArgs([]string{"migrate", "--provider=" + gcpkms.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestMigrateCmd_AzureKMSToAzureKMS_DifferentKey_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/key-a/v1",
+	})
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + azurekms.Name,
+		"--key-resource-id=https://test.vault.azure.net/keys/key-b/v1",
+	})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Migrated 1 file")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, azurekms.Name, cfg.Provider)
+	require.Equal(t, "https://test.vault.azure.net/keys/key-b/v1", cfg.KeyResourceID)
+
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+}
+
+func TestMigrateCmd_AzureKMSToAzureKMS_SameKeyFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cred, opts := azurekmstest.NewFakeServer("https://test.vault.azure.net", "test-key", "v1")
+	restore := azurekms.SetTestOverridesForTesting(cred, opts)
+	defer restore()
+
+	setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      azurekms.Name,
+		KeyResourceID: "https://test.vault.azure.net/keys/key-a/v1",
+	})
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + azurekms.Name,
+		"--key-resource-id=https://test.vault.azure.net/keys/key-a/v1",
+	})
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "identical to the current key")
+}
+
+func TestMigrateCmd_AzureKMSTarget_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"migrate", "--provider=" + azurekms.Name})
 
 	err := cmd.Execute()
 	require.ErrorContains(t, err, "--key-resource-id is required")
