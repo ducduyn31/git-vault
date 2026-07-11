@@ -31,6 +31,15 @@ func TestProvider_RecipientGeneratesAndPersistsIdentity(t *testing.T) {
 	require.Equal(t, recipient1, recipient2)
 }
 
+func TestProvider_Recipient_GeneratesHybridIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+	p := &Provider{IdentityPath: path}
+
+	recipient, err := p.Recipient()
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(recipient, "age1pq1"), "expected a post-quantum hybrid recipient, got %q", recipient)
+}
+
 func TestProvider_EncryptDecryptRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "identity.txt")
 	p := &Provider{IdentityPath: path}
