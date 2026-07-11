@@ -69,6 +69,19 @@ func (v *Vault) Open(path string) error {
 	return os.WriteFile(path, out.Bytes(), 0o644)
 }
 
+// IsSealed reports whether the file at path currently holds a valid sops
+// tree for its format (per FormatForPath) rather than plaintext. It only
+// checks structure/metadata — no key material is needed, so this works
+// even without a configured key provider.
+func IsSealed(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("vault: read %s: %w", path, err)
+	}
+	_, err = storeForFormat(FormatForPath(path)).LoadEncryptedFile(data)
+	return err == nil, nil
+}
+
 // SealStream encrypts r (formatted per format), writing the sealed result
 // to w. Used by git's clean filter, which gets file content on
 // stdin/stdout rather than a real path.
