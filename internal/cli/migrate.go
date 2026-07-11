@@ -63,6 +63,28 @@ func newMigrateCmd() *cobra.Command {
 				return fmt.Errorf("git vault migrate: target is identical to the current key (%s); nothing to migrate", oldRecipients[0])
 			}
 
+			// Fail fast on a bad target key before resealTracked decrypts
+			// anything to plaintext on disk: resealTracked opens each
+			// tracked file under the OLD key before sealing it under the
+			// new one, so a malformed/unreachable target key would
+			// otherwise be discovered only after the first file is already
+			// plaintext, with .git-vault.yaml never updated. Mirrors the
+			// same round-trip check install.go runs before touching git
+			// config — see verifyGCPKMSRoundTrip/verifyAzureKMSRoundTrip in
+			// login.go. Unlike install/login, migrate does not offer to run
+			// gcloud/az login on failure: it's a rarer, more deliberate
+			// operation than initial setup.
+			switch target {
+			case gcpkms.Name:
+				if err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
+					return fmt.Errorf("git vault migrate: %w", err)
+				}
+			case azurekms.Name:
+				if err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
+					return fmt.Errorf("git vault migrate: %w", err)
+				}
+			}
+
 			n, err := resealTracked(oldVault, newVault, newRecipients)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)

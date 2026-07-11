@@ -227,6 +227,11 @@ func TestRotateCmd_AzureKMS_ReResolvesVersionAndRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://test.vault.azure.net/keys/test-key/v2", cfg.KeyResourceID, "rotate must persist the re-resolved current version")
 
+	// The file's own embedded sops recipient must reference the NEW
+	// version too — proving the re-seal actually moved the file onto v2,
+	// not just that .git-vault.yaml's KeyResourceID was updated.
+	require.Contains(t, string(sealedAfter), "azurekms:https://test.vault.azure.net/keys/test-key/v2")
+
 	decryptCmd2 := NewRootCmd()
 	decryptCmd2.SetOut(&bytes.Buffer{})
 	decryptCmd2.SetArgs([]string{"decrypt", "secret.yaml"})
