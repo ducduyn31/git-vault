@@ -50,7 +50,6 @@ func DefaultIdentityPath() (string, error) {
 	return filepath.Join(dir, "git-vault", "local", "identity.txt"), nil
 }
 
-// Name identifies this provider in a "local:<key-id>" identifier.
 func (p *Provider) Name() string { return Name }
 
 // Recipient returns this provider's current recipient key-id — a bech32

@@ -20,7 +20,6 @@ type Config struct {
 	ClientID  string `yaml:"client_id,omitempty"`
 }
 
-// Load reads and parses the config file at path.
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -33,7 +32,6 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
-// Save writes c to path.
 func Save(path string, c Config) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {

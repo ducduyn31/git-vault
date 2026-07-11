@@ -35,7 +35,6 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "git-vault", "session.json"), nil
 }
 
-// Load reads and parses the session file at path.
 func Load(path string) (Session, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -48,8 +47,8 @@ func Load(path string) (Session, error) {
 	return s, nil
 }
 
-// Save writes s to path, creating parent directories as needed. The file
-// is written with 0600 permissions since it holds credential material.
+// Save writes s to path with 0600 permissions, since it holds credential
+// material.
 func Save(path string, s Session) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
