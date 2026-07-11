@@ -2,10 +2,12 @@ package local
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"filippo.io/age"
 	"github.com/stretchr/testify/require"
 )
 
@@ -195,4 +197,60 @@ func TestIdentityPathEnvVar_OverridesDefault(t *testing.T) {
 	p, err := New()
 	require.NoError(t, err)
 	require.Equal(t, custom, p.IdentityPath)
+}
+
+func TestProvider_ExistingX25519OnlyFile_StillRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+
+	// Simulate a pre-existing installation: an identities file written
+	// before this change ever ran, containing only a classical X25519
+	// identity, with no Hybrid identity present.
+	oldID, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte(oldID.String()+"\n"), 0o600))
+
+	p := &Provider{IdentityPath: path}
+
+	recipient, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, oldID.Recipient().String(), recipient, "must not silently generate a new identity when one already exists")
+	require.False(t, strings.HasPrefix(recipient, "age1pq1"), "existing X25519-only file must not be force-migrated")
+
+	ciphertext, err := p.Encrypt(context.Background(), recipient, []byte("secret"))
+	require.NoError(t, err)
+	got, err := p.Decrypt(context.Background(), recipient, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret"), got)
+}
+
+func TestProvider_MixedIdentityFile_RoundTripsBoth(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identities")
+
+	// Simulate the state right after one `git vault rotate` on a
+	// pre-existing X25519-only install: one old classical line, one new
+	// hybrid line, oldest first.
+	oldID, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
+	newID, err := age.GenerateHybridIdentity()
+	require.NoError(t, err)
+	contents := oldID.String() + "\n" + newID.String() + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+
+	p := &Provider{IdentityPath: path}
+
+	current, err := p.Recipient()
+	require.NoError(t, err)
+	require.Equal(t, newID.Recipient().String(), current, "Recipient must report the newest (last) entry")
+
+	oldCiphertext, err := p.Encrypt(context.Background(), oldID.Recipient().String(), []byte("old-secret"))
+	require.NoError(t, err)
+	gotOld, err := p.Decrypt(context.Background(), oldID.Recipient().String(), oldCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("old-secret"), gotOld)
+
+	newCiphertext, err := p.Encrypt(context.Background(), newID.Recipient().String(), []byte("new-secret"))
+	require.NoError(t, err)
+	gotNew, err := p.Decrypt(context.Background(), newID.Recipient().String(), newCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, []byte("new-secret"), gotNew)
 }
