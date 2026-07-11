@@ -33,15 +33,13 @@ error-styling path in `main.go`.
 
 A new `internal/ui` package wraps `charmbracelet/log` (leveled logger) and
 `charmbracelet/lipgloss` (styles + table layout). Two new direct
-dependencies; `golang.org/x/term` (already a dependency) is reused for
-terminal detection.
+dependencies.
 
 ```go
 // internal/ui/ui.go
-func ColorEnabled(w io.Writer) bool
 func New(w io.Writer) *log.Logger   // success/warn logger, level styles restyled
 func Error(w io.Writer, err error)  // single error-rendering entry point
-func Table(rows [][2]string) string // FILE/STATE table for status
+func Table(w io.Writer, rows [][2]string) // renders FILE/STATE table for status
 ```
 
 Key decisions:
@@ -51,18 +49,16 @@ Key decisions:
    existing pattern of writing through cobra's writers. This is what lets
    tests keep using `cmd.SetOut(&bytes.Buffer{})` to capture output.
 
-2. **Color is decided explicitly by git-vault, not left to library
-   auto-detection.** `ColorEnabled(w)` returns true only if `w` is an
-   `*os.File`, `term.IsTerminal(fd)` is true, and `NO_COLOR` is unset.
-   Every other writer (a `bytes.Buffer` in tests, a pipe, a redirected
-   file) renders plain, uncolored text. This is deliberately not delegated
-   to charmbracelet's own detection, which ties color profile to the
-   process's actual stdout rather than the specific writer passed in —
-   relying on that would risk ANSI codes leaking into piped/test output.
-   `ColorEnabled`'s result is used to pick a `lipgloss.Renderer` bound to
-   that writer (`lipgloss.NewRenderer(w)`, with `.SetColorProfile(termenv.Ascii)`
-   forced when disabled) and passed to both the logger's styles and the
-   table renderer.
+2. **Color/TTY detection is delegated to the libraries — verified, not
+   assumed.** `charmbracelet/log` and `lipgloss` both detect color support
+   per the specific `io.Writer` passed in (via the shared
+   `charmbracelet/colorprofile` detection, which checks whether the writer
+   is a terminal file descriptor, and honors `NO_COLOR`). This was
+   confirmed with a throwaway spike: `log.New(buf).Info(...)` and
+   `lipgloss.NewRenderer(buf).NewStyle()...Render(...)` against a
+   `bytes.Buffer` both produced plain text with zero ANSI escape codes.
+   No custom isatty/`NO_COLOR` wrapper is needed — writing one would just
+   reimplement what the libraries already do correctly per-writer.
 
 3. **Errors funnel through one place.** Commands keep returning plain
    `error` values exactly as today (`fmt.Errorf("git vault x: %w", err)`,
@@ -94,20 +90,30 @@ consistency with install/migrate/rotate:
 
 ## Testing
 
-Existing tests assert exact output strings via `cmd.SetOut(&bytes.Buffer{})`.
-Since a `bytes.Buffer` is never an `*os.File`, `ColorEnabled` returns false
-for every existing test, so output stays plain text — but the text itself
-changes (new checkmark-prefixed wording, new confirmation lines), so
-existing assertions in `install_test.go`, `migrate_test.go`, `rotate_test.go`,
-`status_test.go`, `encrypt_test.go`, and `track`'s (new) test need updating
-to match. This is expected, not a regression.
+Existing tests write to a `bytes.Buffer` via `cmd.SetOut(...)`, so per the
+spike above, output renders in plain text (no ANSI codes) exactly as it
+does today. Most existing assertions use `require.Contains` on a substring
+(`"Migrated 1 file"`, `"Recipient: passphrase:shared"`, etc.), which the new
+`✓ ` prefix doesn't break — confirmed by spiking the exact rendering of a
+multi-line `Info` call. The one exception: `status_test.go`'s two
+`require.Contains(t, out.String(), "secret.yaml\tplaintext")`-style
+assertions check the current tab-separated format directly, which the new
+table replaces — those two assertions need updating to match the table
+output. `version_test.go`'s `require.Equal(t, "dev\n", ...)` is unaffected
+since `version` is out of scope.
 
 A new `internal/ui` package gets its own unit tests covering:
-- `ColorEnabled` returns false for a `bytes.Buffer`, true for a `*os.File`
-  pointing at a real TTY is not practically testable in CI — test the
-  `*os.File`-but-not-a-TTY case (e.g. a temp file) returns false, and that
-  `NO_COLOR=1` forces false even when otherwise eligible.
-- `Table` renders expected column alignment for a few sample rows.
+- `New(buf).Info("msg")` renders `"✓ msg\n"` with no ANSI codes when `buf`
+  is a `bytes.Buffer`.
+- `Error(buf, err)` renders `"✗ Error: <err.Error()>\n"`.
+- `Table` renders the expected header and colored-free (buffer target)
+  column output for a few sample rows, including the encrypted/plaintext/
+  error coloring branch selection (verified by checking which style
+  function was applied is hard to assert directly on a buffer since color
+  is off there — instead assert the row *text* content and column
+  alignment; color branch selection is exercised implicitly and re-verified
+  by manual TTY testing during the verify step, not by an automated color
+  assertion).
 
 ## Out of scope / future
 
