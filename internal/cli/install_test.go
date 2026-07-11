@@ -219,7 +219,7 @@ func TestInstallCmd_GCPKMS_FailsWithoutReachableKMS(t *testing.T) {
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetArgs([]string{
 		"install", "--provider=" + gcpkms.Name,
-		"--key-resource-id=projects/test/locations/global/keyRings/test/cryptoKeys/test",
+		"--key-resource-id=not-a-valid-resource-id",
 	})
 
 	err := cmd.Execute()

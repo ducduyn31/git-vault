@@ -95,7 +95,7 @@ func TestServer_NonAgeKeyType_ReturnsInvalidArgument(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-func TestServer_ProviderError_ReturnsInternal(t *testing.T) {
+func TestServer_ProviderError_ReturnsPlainWrappedError(t *testing.T) {
 	registry := NewRegistry()
 	require.NoError(t, registry.Register(recordingProvider{name: "sso", decryptErr: errors.New("boom")}))
 	server := NewServer(registry)
@@ -104,5 +104,10 @@ func TestServer_ProviderError_ReturnsInternal(t *testing.T) {
 		Key:        ageKey("sso:my-key"),
 		Ciphertext: []byte("whatever"),
 	})
-	require.Equal(t, codes.Internal, status.Code(err))
+	// Provider errors (e.g. gcpkms's friendly ADC-missing message) must
+	// surface as plain errors, not gRPC status errors, so the friendly
+	// text isn't buried under "rpc error: code = ... desc = ..." noise
+	// on the encrypt/decrypt/clean/smudge path.
+	require.ErrorContains(t, err, `provider "sso" decrypt: boom`)
+	require.Equal(t, codes.Unknown, status.Code(err), "provider errors must not be gRPC status errors")
 }
