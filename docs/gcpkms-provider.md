@@ -79,6 +79,6 @@ primary version:
 - `no valid resource ID found in "..."` — the `--key-resource-id` doesn't
   match `projects/P/locations/L/keyRings/R/cryptoKeys/K`. Copy it exactly
   from `gcloud kms keys create`'s output or `gcloud kms keys list`.
-- "no Google credentials found — run `gcloud auth application-default
+- "gcpkms: no Google credentials found — run `gcloud auth application-default
   login` first" — exactly that: ADC hasn't been set up on this machine
   yet.
