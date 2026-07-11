@@ -96,9 +96,12 @@ func (p *Provider) Rotate() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("local: open identities file: %w", err)
 	}
-	defer f.Close()
 	if _, err := f.WriteString(id.String() + "\n"); err != nil {
+		_ = f.Close()
 		return "", fmt.Errorf("local: append identity: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("local: close identities file: %w", err)
 	}
 	return id.Recipient().String(), nil
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
-	"github.com/ducduyn31/git-vault/internal/gitattr"
 	"github.com/ducduyn31/git-vault/internal/keyservice"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
@@ -81,25 +80,9 @@ func newRotateCmd() *cobra.Command {
 				return fmt.Errorf("git vault rotate: rotation not supported for provider %q", cfg.Provider)
 			}
 
-			patterns, err := gitattr.Tracked(".gitattributes")
+			n, err := resealTracked(oldVault, newVault, newRecipients)
 			if err != nil {
 				return fmt.Errorf("git vault rotate: %w", err)
-			}
-			var files []string
-			if len(patterns) > 0 {
-				files, err = trackedFiles(patterns)
-				if err != nil {
-					return fmt.Errorf("git vault rotate: %w", err)
-				}
-			}
-
-			for _, f := range files {
-				if err := oldVault.Open(f); err != nil {
-					return fmt.Errorf("git vault rotate: decrypt %s: %w", f, err)
-				}
-				if err := newVault.Seal(f, newRecipients); err != nil {
-					return fmt.Errorf("git vault rotate: re-seal %s: %w", f, err)
-				}
 			}
 
 			var followUp string
@@ -113,7 +96,8 @@ func newRotateCmd() *cobra.Command {
 			}
 			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf(
 				"Rotated %d file(s) under %q.\n%s\nRun `git add -A && git commit` to finish — committed ciphertext still needs the old key until you do.",
-				len(files), cfg.Provider, followUp))
+				n, cfg.Provider, followUp,
+			))
 			return nil
 		},
 	}

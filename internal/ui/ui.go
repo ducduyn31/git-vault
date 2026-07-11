@@ -36,6 +36,18 @@ func Error(w io.Writer, err error) {
 	l.Error(err.Error())
 }
 
+// Warn renders msg in yellow as "⚠ Warning: <message>" to w — for
+// non-fatal cautions the command still succeeds through, like plaintext
+// files left unprotected. Distinct from Info's green ✓ so a warning never
+// reads as a success.
+func Warn(w io.Writer, msg string) {
+	l := log.NewWithOptions(w, log.Options{ReportTimestamp: false})
+	styles := log.DefaultStyles()
+	styles.Levels[log.WarnLevel] = lipgloss.NewStyle().SetString("⚠ Warning:").Foreground(lipgloss.Color("3"))
+	l.SetStyles(styles)
+	l.Warn(msg)
+}
+
 // Table renders a FILE/STATE table to w for the status command. The STATE
 // column is colored per value: "encrypted" green, "plaintext" yellow,
 // anything else (an error message) red.
@@ -59,5 +71,5 @@ func Table(w io.Writer, rows [][2]string) {
 		}
 		t.Row(row[0], styled)
 	}
-	fmt.Fprintln(w, t.Render())
+	_, _ = fmt.Fprintln(w, t.Render())
 }
