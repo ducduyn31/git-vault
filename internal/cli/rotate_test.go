@@ -14,6 +14,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -223,6 +225,49 @@ func TestRotateCmd_AWSKMS_RoundTrip(t *testing.T) {
 	sealedAfter, err := os.ReadFile("secret.yaml")
 	require.NoError(t, err)
 	require.NotEqual(t, string(sealedBefore), string(sealedAfter), "rotate must force a fresh KMS Encrypt call")
+
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+}
+
+func TestRotateCmd_Vault_RoundTrips(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	srv := hcvaulttest.NewFakeServer("")
+	defer srv.Close()
+	restore := hcvault.SetTestOverridesForTesting("")
+	defer restore()
+
+	keyID := srv.URL + "/v1/transit/keys/test-key"
+	original := setupTrackedEncryptedFileWithConfig(t, config.Config{
+		Provider:      hcvault.Name,
+		KeyResourceID: keyID,
+	})
+
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"rotate"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Rotated 1 file")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.NotEqual(t, string(sealedBefore), string(sealedAfter), "rotate must force a fresh Vault Encrypt call")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, keyID, cfg.KeyResourceID, "vault's key URL never encodes a version, so rotate must not rewrite it")
 
 	decryptCmd := NewRootCmd()
 	decryptCmd.SetOut(&bytes.Buffer{})

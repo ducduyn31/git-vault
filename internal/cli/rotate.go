@@ -10,6 +10,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 	"github.com/ducduyn31/git-vault/internal/ui"
@@ -94,6 +95,20 @@ func newRotateCmd() *cobra.Command {
 					return fmt.Errorf("git vault rotate: %w", err)
 				}
 				oldVault = newVault
+			case hcvault.Name:
+				// The Transit key URL never encodes a version (unlike
+				// azurekms's Key Vault URL), and Vault Transit rotation
+				// (vault write -f transit/keys/<name>/rotate) is
+				// invisible to git-vault the same way GCP's and AWS's
+				// automatic rotation are — there is no "current version"
+				// to re-resolve and persist. Re-sealing every file still
+				// forces a fresh Encrypt call, which Vault always
+				// services with the key's current version.
+				newVault, newRecipients, err = vaultForProvider(cfg)
+				if err != nil {
+					return fmt.Errorf("git vault rotate: %w", err)
+				}
+				oldVault = newVault
 			case azurekms.Name:
 				// Azure Key Vault key URLs are version-pinned (unlike GCP's
 				// resource ID), so if the key was rotated in Azure since
@@ -137,6 +152,8 @@ func newRotateCmd() *cobra.Command {
 				followUp = "Old KMS key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable or destroy the old version(s) in GCP to complete the rotation."
 			case awskms.Name:
 				followUp = "AWS KMS rotates its backing key material automatically and transparently — unlike GCP, there is no old version to disable or destroy afterward; this re-encryption is defense-in-depth only. To actually retire a compromised key, use `git vault migrate` to a different KMS key instead."
+			case hcvault.Name:
+				followUp = "Vault Transit key versions are still enabled to decrypt anything not yet migrated, including committed history (governed by the key's min_decryption_version). Once every commit that matters has been rotated, run `vault write transit/keys/<name>/config min_decryption_version=<new-version>` to retire the old version(s)."
 			case azurekms.Name:
 				followUp = "Old Key Vault key versions are still enabled to decrypt anything not yet migrated, including committed history. Once every commit that matters has been rotated, disable the old version in Azure to complete the rotation."
 			}
