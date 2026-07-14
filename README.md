@@ -72,7 +72,7 @@ git vault encrypt secrets/prod.yaml
 git vault decrypt secrets/prod.yaml
 ```
 
-## Team key-sharing with cloud KMS
+## Team key-sharing with a shared key
 
 For a shared key backed by your org's existing SSO (rather than a local
 per-machine key or an out-of-band passphrase), see
