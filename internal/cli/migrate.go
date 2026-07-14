@@ -9,6 +9,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
@@ -50,7 +51,7 @@ func newMigrateCmd() *cobra.Command {
 				return err
 			}
 
-			if (target == gcpkms.Name || target == awskms.Name || target == azurekms.Name) && keyResourceID == "" {
+			if (target == gcpkms.Name || target == awskms.Name || target == azurekms.Name || target == hcvault.Name) && keyResourceID == "" {
 				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", target)
 			}
 
@@ -94,6 +95,10 @@ func newMigrateCmd() *cobra.Command {
 				if err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
 					return fmt.Errorf("git vault migrate: %w", err)
 				}
+			case hcvault.Name:
+				if err := verifyVaultRoundTrip(cmd.Context(), keyResourceID); err != nil {
+					return fmt.Errorf("git vault migrate: %w", err)
+				}
 			}
 
 			n, err := resealTracked(oldVault, newVault, newRecipients)
@@ -112,8 +117,8 @@ func newMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms, awskms, azurekms)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, or Azure Key Vault key URL (required when --provider gcpkms, awskms, or azurekms)")
+	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms, awskms, azurekms, vault)")
+	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, Azure Key Vault key URL, or Vault Transit key URL (required when --provider gcpkms, awskms, azurekms, or vault)")
 	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
 	return cmd
 }
