@@ -13,6 +13,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
 
@@ -79,6 +81,21 @@ func TestVaultForProvider_AzureKMS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"azurekms:https://test.vault.azure.net/keys/test-key/v1"}, recipients)
+}
+
+func TestVaultForProvider_HCVault_ResolvesRecipient(t *testing.T) {
+	srv := hcvaulttest.NewFakeServer("")
+	defer srv.Close()
+	restore := hcvault.SetTestOverridesForTesting("")
+	defer restore()
+
+	keyID := srv.URL + "/v1/transit/keys/test-key"
+	_, recipients, err := vaultForProvider(config.Config{
+		Provider:      hcvault.Name,
+		KeyResourceID: keyID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"vault:" + keyID}, recipients)
 }
 
 func TestVaultForProvider_UnknownProviderFails(t *testing.T) {

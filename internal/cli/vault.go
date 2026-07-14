@@ -10,6 +10,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 	"github.com/ducduyn31/git-vault/internal/vault"
@@ -101,6 +102,22 @@ func newAzureKMSVault(cfg config.Config) (*vault.Vault, []string, error) {
 	return vault.New(server), []string{azurekms.Name + ":" + cfg.KeyResourceID}, nil
 }
 
+// newHCVaultVault builds a Vault dispatching to HashiCorp Vault's Transit
+// engine, along with the "<provider>:<key-id>" recipient string for
+// cfg.KeyResourceID (a Vault Transit key URL). Unlike local/passphrase,
+// the key material lives entirely in Vault — this Provider holds no
+// identity of its own beyond whatever bearer token VAULT_TOKEN/
+// ~/.vault-token resolves to.
+func newHCVaultVault(cfg config.Config) (*vault.Vault, []string, error) {
+	registry := keyservice.NewRegistry()
+	if err := registry.Register(hcvault.New()); err != nil {
+		return nil, nil, err
+	}
+	server := keyservice.NewServer(registry)
+
+	return vault.New(server), []string{hcvault.Name + ":" + cfg.KeyResourceID}, nil
+}
+
 // vaultForProvider builds the Vault for the provider named in cfg. It
 // takes the full config, not just the provider name, because gcpkms
 // needs KeyResourceID — local/passphrase ignore everything but
@@ -117,6 +134,8 @@ func vaultForProvider(cfg config.Config) (*vault.Vault, []string, error) {
 		return newAWSKMSVault(cfg)
 	case azurekms.Name:
 		return newAzureKMSVault(cfg)
+	case hcvault.Name:
+		return newHCVaultVault(cfg)
 	default:
 		return nil, nil, fmt.Errorf("git vault: unknown provider %q in %s", cfg.Provider, config.DefaultFileName)
 	}
