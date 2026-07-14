@@ -17,13 +17,14 @@ import (
 // provider/key to a different target, then updates .git-vault.yaml. A
 // target that resolves to the exact same key as the current one is
 // rejected rather than silently no-op'd: for local/passphrase that's
-// always true (each has exactly one key source); for gcpkms/awskms/azurekms
+// always true (each has exactly one key source); for gcpkms/awskms/azurekms/vault
 // it's only true when the resource ID/ARN/URL also matches, since two
 // different targets can share the provider name but name different keys.
 // See docs/superpowers/specs/2026-07-11-migrate-provider-design.md,
 // docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md,
-// docs/superpowers/specs/2026-07-12-awskms-provider-design.md, and
-// docs/superpowers/specs/2026-07-12-azurekms-provider-design.md.
+// docs/superpowers/specs/2026-07-12-awskms-provider-design.md,
+// docs/superpowers/specs/2026-07-12-azurekms-provider-design.md, and
+// docs/superpowers/specs/2026-07-14-vault-provider-design.md.
 func newMigrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
