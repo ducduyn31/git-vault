@@ -19,6 +19,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 )
 
@@ -313,4 +315,84 @@ func TestAttemptAzLogin_AutoLoginStillNeedsCLI(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
 	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString(""), out), true))
+}
+
+func TestLoginCmd_Vault_Succeeds(t *testing.T) {
+	chdirTemp(t)
+
+	srv := hcvaulttest.NewFakeServer("")
+	defer srv.Close()
+	restore := hcvault.SetTestOverridesForTesting("")
+	defer restore()
+
+	keyID := srv.URL + "/v1/transit/keys/test-key"
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      hcvault.Name,
+		KeyResourceID: keyID,
+	}))
+
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"login"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "authorized")
+}
+
+func TestLoginCmd_Vault_FailsWithoutReachableVault(t *testing.T) {
+	chdirTemp(t)
+	require.NoError(t, config.Save(config.DefaultFileName, config.Config{
+		Provider:      hcvault.Name,
+		KeyResourceID: "not-a-valid-url",
+	}))
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"login"})
+	require.Error(t, cmd.Execute())
+}
+
+func fakeVaultCLI(t *testing.T, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake vault script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "vault")
+	contents := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	require.NoError(t, os.WriteFile(script, []byte(contents), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestAttemptVaultLogin_NoVaultCLIOnPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out := &bytes.Buffer{}
+	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.Empty(t, out.String())
+}
+
+func TestAttemptVaultLogin_Declined(t *testing.T) {
+	fakeVaultCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.Contains(t, out.String(), "Run `vault login` now?")
+}
+
+func TestAttemptVaultLogin_ConfirmedAndCLISucceeds(t *testing.T) {
+	fakeVaultCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+}
+
+func TestAttemptVaultLogin_ConfirmedButCLIFails(t *testing.T) {
+	fakeVaultCLI(t, 1)
+	out := &bytes.Buffer{}
+	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+}
+
+func TestAttemptVaultLogin_AutoLoginSkipsPrompt(t *testing.T) {
+	fakeVaultCLI(t, 0)
+	out := &bytes.Buffer{}
+	require.True(t, attemptVaultLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.Empty(t, out.String())
 }
