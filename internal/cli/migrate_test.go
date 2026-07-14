@@ -14,6 +14,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -446,6 +448,75 @@ func TestMigrateCmd_AWSKMSTarget_UnreachableKeyFailsBeforeResealing(t *testing.T
 	sealedAfter, err := os.ReadFile("secret.yaml")
 	require.NoError(t, err)
 	require.Equal(t, string(sealedBefore), string(sealedAfter), "file must stay sealed under the old key when migrate fails fast on an unreachable target")
+}
+
+func TestMigrateCmd_LocalToVault_RoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	original := setupTrackedEncryptedFile(t, local.Name)
+
+	srv := hcvaulttest.NewFakeServer("")
+	defer srv.Close()
+	restore := hcvault.SetTestOverridesForTesting("")
+	defer restore()
+
+	keyID := srv.URL + "/v1/transit/keys/test-key"
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + hcvault.Name,
+		"--key-resource-id=" + keyID,
+	})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, out.String(), "Migrated 1 file")
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, hcvault.Name, cfg.Provider)
+	require.Equal(t, keyID, cfg.KeyResourceID)
+
+	decryptCmd := NewRootCmd()
+	decryptCmd.SetOut(&bytes.Buffer{})
+	decryptCmd.SetArgs([]string{"decrypt", "secret.yaml"})
+	require.NoError(t, decryptCmd.Execute())
+
+	opened, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, original, string(opened))
+}
+
+func TestMigrateCmd_VaultTarget_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"migrate", "--provider=" + hcvault.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestMigrateCmd_VaultTarget_UnreachableKeyFailsBeforeResealing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+	setupTrackedEncryptedFile(t, local.Name)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"migrate", "--provider=" + hcvault.Name,
+		"--key-resource-id=not-a-valid-url",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, local.Name, cfg.Provider, ".git-vault.yaml must be untouched when the target key is unreachable")
 }
 
 func TestMigrateCmd_AzureKMSTarget_UnreachableKeyFailsBeforeResealing(t *testing.T) {
