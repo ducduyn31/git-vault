@@ -17,6 +17,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms/azurekmstest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms/gcpkmstest"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/keyservice/passphrase"
 )
@@ -380,4 +382,61 @@ func TestInstallCmd_AzureKMS_FailsWithoutReachableVault(t *testing.T) {
 
 	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
 	require.Error(t, gitErr, "git config must not be set when install fails the Key Vault round trip")
+}
+
+func TestInstallCmd_Vault_WritesConfigAndValidates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	srv := hcvaulttest.NewFakeServer("")
+	defer srv.Close()
+	restore := hcvault.SetTestOverridesForTesting("")
+	defer restore()
+
+	keyID := srv.URL + "/v1/transit/keys/test-key"
+	cmd := NewRootCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{
+		"install", "--provider=" + hcvault.Name,
+		"--key-resource-id=" + keyID,
+	})
+	require.NoError(t, cmd.Execute())
+
+	require.Contains(t, out.String(), "Recipient: vault:"+keyID)
+
+	cfg, err := config.Load(config.DefaultFileName)
+	require.NoError(t, err)
+	require.Equal(t, hcvault.Name, cfg.Provider)
+	require.Equal(t, keyID, cfg.KeyResourceID)
+}
+
+func TestInstallCmd_Vault_MissingKeyResourceIDFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--provider=" + hcvault.Name})
+
+	err := cmd.Execute()
+	require.ErrorContains(t, err, "--key-resource-id is required")
+}
+
+func TestInstallCmd_Vault_FailsWithoutReachableVault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chdirTemp(t)
+
+	cmd := NewRootCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"install", "--provider=" + hcvault.Name,
+		"--key-resource-id=not-a-valid-url",
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+
+	_, gitErr := exec.Command("git", "config", "--get", "filter.git-vault.clean").Output()
+	require.Error(t, gitErr, "git config must not be set when install fails the Vault round trip")
 }
