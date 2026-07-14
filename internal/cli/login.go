@@ -13,6 +13,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
 	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
+	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
 )
 
 // loginProbe is the fixed plaintext used to verify a KMS round trip. It
@@ -164,6 +165,54 @@ func attemptAzLogin(cmd *cobra.Command, autoLogin bool) bool {
 	azCmd.Stdout = cmd.OutOrStdout()
 	azCmd.Stderr = cmd.ErrOrStderr()
 	return azCmd.Run() == nil
+}
+
+// attemptVaultLogin tries to fix a permission-denied failure
+// (hcvault.ErrNoValidToken) by running `vault login` with no arguments —
+// the default token auth method. Mirrors attemptAzLogin's
+// confirm-before-exec shape exactly, including the autoLogin
+// (config.Config.AutoLogin) opt-out. Orgs using a non-default auth method
+// (OIDC, LDAP, GitHub, AppRole) should run their own
+// `vault login -method=...` first; this only covers the common case.
+func attemptVaultLogin(cmd *cobra.Command, autoLogin bool) bool {
+	path, err := exec.LookPath("vault")
+	if err != nil {
+		return false
+	}
+
+	if !autoLogin {
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), "No valid Vault token found. Run `vault login` now? [y/N] "); err != nil {
+			return false
+		}
+		line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+			return false
+		}
+	}
+
+	vaultCmd := exec.CommandContext(cmd.Context(), path, "login")
+	vaultCmd.Stdin = cmd.InOrStdin()
+	vaultCmd.Stdout = cmd.OutOrStdout()
+	vaultCmd.Stderr = cmd.ErrOrStderr()
+	return vaultCmd.Run() == nil
+}
+
+// verifyVaultRoundTrip is verifyGCPKMSRoundTrip's Vault Transit
+// equivalent — see its doc comment.
+func verifyVaultRoundTrip(ctx context.Context, keyResourceID string) error {
+	provider := hcvault.New()
+	ciphertext, err := provider.Encrypt(ctx, keyResourceID, []byte(loginProbe))
+	if err != nil {
+		return err
+	}
+	plaintext, err := provider.Decrypt(ctx, keyResourceID, ciphertext)
+	if err != nil {
+		return err
+	}
+	if string(plaintext) != loginProbe {
+		return fmt.Errorf("hcvault: round trip returned unexpected plaintext")
+	}
+	return nil
 }
 
 // verifyGCPKMSRoundTrip encrypts and decrypts a fixed probe value against
