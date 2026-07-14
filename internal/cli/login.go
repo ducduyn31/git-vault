@@ -63,6 +63,16 @@ func newLoginCmd() *cobra.Command {
 				}
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Azure Key Vault round trip succeeded — this machine is authorized.")
 				return err
+			case hcvault.Name:
+				err = verifyVaultRoundTrip(cmd.Context(), cfg.KeyResourceID)
+				if errors.Is(err, hcvault.ErrNoValidToken) && attemptVaultLogin(cmd, cfg.AutoLogin) {
+					err = verifyVaultRoundTrip(cmd.Context(), cfg.KeyResourceID)
+				}
+				if err != nil {
+					return fmt.Errorf("git vault login: %w", err)
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Vault Transit round trip succeeded — this machine is authorized.")
+				return err
 			default:
 				return fmt.Errorf("git vault login: provider %q does not use git vault login", cfg.Provider)
 			}
