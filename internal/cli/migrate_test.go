@@ -504,6 +504,9 @@ func TestMigrateCmd_VaultTarget_UnreachableKeyFailsBeforeResealing(t *testing.T)
 	chdirTemp(t)
 	setupTrackedEncryptedFile(t, local.Name)
 
+	sealedBefore, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetArgs([]string{
@@ -511,12 +514,16 @@ func TestMigrateCmd_VaultTarget_UnreachableKeyFailsBeforeResealing(t *testing.T)
 		"--key-resource-id=not-a-valid-url",
 	})
 
-	err := cmd.Execute()
+	err = cmd.Execute()
 	require.Error(t, err)
 
 	cfg, err := config.Load(config.DefaultFileName)
 	require.NoError(t, err)
 	require.Equal(t, local.Name, cfg.Provider, ".git-vault.yaml must be untouched when the target key is unreachable")
+
+	sealedAfter, err := os.ReadFile("secret.yaml")
+	require.NoError(t, err)
+	require.Equal(t, string(sealedBefore), string(sealedAfter), "file must stay sealed under the old key when migrate fails fast on an unreachable target")
 }
 
 func TestMigrateCmd_AzureKMSTarget_UnreachableKeyFailsBeforeResealing(t *testing.T) {
