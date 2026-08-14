@@ -30,6 +30,7 @@ Vault token — see [docs/gcpkms-provider.md](docs/gcpkms-provider.md),
 ```sh
 # 1. Install the binary
 go install github.com/ducduyn31/git-vault/cmd/git-vault@latest
+# ...or, with Nix: nix-shell -p 'callPackage ./default.nix {}'
 
 # 2. From inside the repo, register the filter driver and generate
 #    this machine's key
