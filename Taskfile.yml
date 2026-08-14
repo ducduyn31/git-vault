@@ -27,6 +27,11 @@ tasks:
     cmds:
       - go test ./...
 
+  test:integration:
+    desc: Run container-backed integration tests (needs a running Docker daemon)
+    cmds:
+      - go test -tags integration ./...
+
   lint:
     desc: Run golangci-lint
     cmds:

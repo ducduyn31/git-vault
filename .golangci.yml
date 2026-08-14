@@ -3,6 +3,9 @@ version: "2"
 run:
   timeout: 5m
   go: "1.26"
+  # Otherwise the integration-tagged tests are invisible to the linter.
+  build-tags:
+    - integration
 
 linters:
   default: standard # = errcheck, govet, ineffassign, staticcheck, unused
