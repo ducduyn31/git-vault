@@ -2,12 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/gitattr"
+	"github.com/ducduyn31/git-vault/internal/gitcmd"
 	"github.com/ducduyn31/git-vault/internal/ui"
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
@@ -28,7 +27,7 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			files, err := trackedFiles(patterns)
+			files, err := gitcmd.TrackedFiles(patterns)
 			if err != nil {
 				return fmt.Errorf("git vault status: %w", err)
 			}
@@ -54,21 +53,4 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// trackedFiles resolves .gitattributes patterns to the working-tree paths
-// git itself considers tracked, using git's own pathspec matching rather
-// than reimplementing gitignore-style globbing.
-func trackedFiles(patterns []string) ([]string, error) {
-	args := append([]string{"ls-files", "--"}, patterns...)
-	out, err := exec.Command("git", args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("git ls-files: %w", err)
-	}
-
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "" {
-		return nil, nil
-	}
-	return strings.Split(trimmed, "\n"), nil
 }

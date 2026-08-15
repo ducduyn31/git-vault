@@ -1,95 +1,44 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
-	"os/exec"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
-	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/gitcmd"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
+	"github.com/ducduyn31/git-vault/internal/provider"
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
 func newInstallCmd() *cobra.Command {
+	var (
+		global        bool
+		providerName  string
+		keyResourceID string
+		awsProfile    string
+		autoLogin     bool
+	)
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Register the git-vault filter driver",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			global, err := cmd.Flags().GetBool("global")
-			if err != nil {
-				return err
-			}
-			providerName, err := cmd.Flags().GetString("provider")
-			if err != nil {
-				return err
-			}
-			keyResourceID, err := cmd.Flags().GetString("key-resource-id")
-			if err != nil {
-				return err
-			}
-			awsProfile, err := cmd.Flags().GetString("aws-profile")
-			if err != nil {
-				return err
-			}
-			autoLogin, err := cmd.Flags().GetBool("auto-login")
-			if err != nil {
-				return err
-			}
-
-			if (providerName == gcpkms.Name || providerName == awskms.Name || providerName == azurekms.Name || providerName == hcvault.Name) && keyResourceID == "" {
+			if _, remote := provider.Remotes[providerName]; remote && keyResourceID == "" {
 				return fmt.Errorf("git vault install: --key-resource-id is required for provider %q", providerName)
 			}
 
 			cfg := config.Config{Provider: providerName, KeyResourceID: keyResourceID, AwsProfile: awsProfile, AutoLogin: autoLogin}
 
-			// vaultForProvider validates the provider name and resolves
-			// the recipient to print — same switch newVault uses.
-			_, recipients, err := vaultForProvider(cfg)
+			_, recipients, err := provider.ForConfig(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault install: %w", err)
 			}
 			recipient := recipients[0]
 
-			switch providerName {
-			case gcpkms.Name:
-				err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
-				if errors.Is(err, gcpkms.ErrNoCredentials) && attemptGcloudLogin(cmd, autoLogin) {
-					err = verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID)
-				}
-				if err != nil {
-					return fmt.Errorf("git vault install: %w", err)
-				}
-			case awskms.Name:
-				err := verifyAWSKMSRoundTrip(cmd.Context(), keyResourceID, awsProfile)
-				if errors.Is(err, awskms.ErrExpiredSSOSession) && attemptAWSSSOLogin(cmd, awsProfile, autoLogin) {
-					err = verifyAWSKMSRoundTrip(cmd.Context(), keyResourceID, awsProfile)
-				}
-				if err != nil {
-					return fmt.Errorf("git vault install: %w", err)
-				}
-			case azurekms.Name:
-				err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
-				if errors.Is(err, azurekms.ErrNoCredentials) && attemptAzLogin(cmd, autoLogin) {
-					err = verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID)
-				}
-				if err != nil {
-					return fmt.Errorf("git vault install: %w", err)
-				}
-			case hcvault.Name:
-				err := verifyVaultRoundTrip(cmd.Context(), keyResourceID)
-				if errors.Is(err, hcvault.ErrNoValidToken) && attemptVaultLogin(cmd, autoLogin) {
-					err = verifyVaultRoundTrip(cmd.Context(), keyResourceID)
-				}
-				if err != nil {
-					return fmt.Errorf("git vault install: %w", err)
-				}
+			if err := verifyRoundTrip(cmd, cfg, true); err != nil {
+				return fmt.Errorf("git vault install: %w", err)
 			}
 
 			settings := []struct{ key, value string }{
@@ -98,7 +47,7 @@ func newInstallCmd() *cobra.Command {
 				{"filter.git-vault.required", "true"},
 			}
 			for _, s := range settings {
-				if err := setGitConfig(global, s.key, s.value); err != nil {
+				if err := gitcmd.SetConfig(global, s.key, s.value); err != nil {
 					return fmt.Errorf("git vault install: %w", err)
 				}
 			}
@@ -115,24 +64,10 @@ func newInstallCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().Bool("global", false, "install the filter driver in the user's global git config")
-	cmd.Flags().String("provider", local.Name, "key provider to use (local, passphrase, gcpkms, awskms, azurekms, vault)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, Azure Key Vault key URL, or Vault Transit key URL (required when --provider gcpkms, awskms, azurekms, or vault)")
-	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
-	cmd.Flags().Bool("auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, awskms, azurekms, vault)")
+	cmd.Flags().BoolVar(&global, "global", false, "install the filter driver in the user's global git config")
+	cmd.Flags().StringVar(&providerName, "provider", local.Name, "key provider to use (local, passphrase, gcpkms, awskms, azurekms, vault)")
+	cmd.Flags().StringVar(&keyResourceID, "key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, Azure Key Vault key URL, or Vault Transit key URL (required when --provider gcpkms, awskms, azurekms, or vault)")
+	cmd.Flags().StringVar(&awsProfile, "aws-profile", "", "named AWS profile to use for credentials (awskms only)")
+	cmd.Flags().BoolVar(&autoLogin, "auto-login", false, "skip the confirmation prompt and run the provider's login command automatically when credentials are missing (gcpkms, awskms, azurekms, vault)")
 	return cmd
-}
-
-func setGitConfig(global bool, key, value string) error {
-	args := []string{"config"}
-	if global {
-		args = append(args, "--global")
-	}
-	args = append(args, key, value)
-
-	out, err := exec.Command("git", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git %s: %w: %s", key, err, out)
-	}
-	return nil
 }

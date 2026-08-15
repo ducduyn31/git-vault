@@ -5,6 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ducduyn31/git-vault/internal/provider"
+
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
@@ -14,7 +16,7 @@ func newEncryptCmd() *cobra.Command {
 		Short: "Encrypt a file in place, outside the filter path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, recipients, err := newVault()
+			v, recipients, err := provider.Current()
 			if err != nil {
 				return err
 			}

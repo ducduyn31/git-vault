@@ -1,6 +1,8 @@
-package cli
+package provider
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -21,7 +23,7 @@ import (
 func TestNewLocalVault_ReturnsVaultAndRecipient(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	v, recipients, err := newLocalVault()
+	v, recipients, err := newLocal()
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Len(t, recipients, 1)
@@ -31,7 +33,7 @@ func TestNewLocalVault_ReturnsVaultAndRecipient(t *testing.T) {
 func TestVaultForProvider_Passphrase(t *testing.T) {
 	t.Setenv(passphrase.EnvVar, "correct horse battery staple")
 
-	v, recipients, err := vaultForProvider(config.Config{Provider: passphrase.Name})
+	v, recipients, err := ForConfig(config.Config{Provider: passphrase.Name})
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"passphrase:shared"}, recipients)
@@ -44,7 +46,7 @@ func TestVaultForProvider_GCPKMS(t *testing.T) {
 	restore := gcpkms.SetClientOptionsForTesting(opts)
 	defer restore()
 
-	v, recipients, err := vaultForProvider(config.Config{
+	v, recipients, err := ForConfig(config.Config{
 		Provider:      gcpkms.Name,
 		KeyResourceID: "projects/test/locations/global/keyRings/test/cryptoKeys/test",
 	})
@@ -60,7 +62,7 @@ func TestVaultForProvider_AWSKMS(t *testing.T) {
 	restore := awskms.SetTestOverridesForTesting(hc, creds)
 	defer restore()
 
-	v, recipients, err := vaultForProvider(config.Config{
+	v, recipients, err := ForConfig(config.Config{
 		Provider:      awskms.Name,
 		KeyResourceID: "arn:aws:kms:us-east-1:111111111111:key/test",
 	})
@@ -74,7 +76,7 @@ func TestVaultForProvider_AzureKMS(t *testing.T) {
 	restore := azurekms.SetTestOverridesForTesting(cred, opts)
 	defer restore()
 
-	v, recipients, err := vaultForProvider(config.Config{
+	v, recipients, err := ForConfig(config.Config{
 		Provider:      azurekms.Name,
 		KeyResourceID: "https://test.vault.azure.net/keys/test-key/v1",
 	})
@@ -90,7 +92,7 @@ func TestVaultForProvider_HCVault_ResolvesRecipient(t *testing.T) {
 	defer restore()
 
 	keyID := srv.URL + "/v1/transit/keys/test-key"
-	_, recipients, err := vaultForProvider(config.Config{
+	_, recipients, err := ForConfig(config.Config{
 		Provider:      hcvault.Name,
 		KeyResourceID: keyID,
 	})
@@ -99,14 +101,14 @@ func TestVaultForProvider_HCVault_ResolvesRecipient(t *testing.T) {
 }
 
 func TestVaultForProvider_UnknownProviderFails(t *testing.T) {
-	_, _, err := vaultForProvider(config.Config{Provider: "bogus"})
+	_, _, err := ForConfig(config.Config{Provider: "bogus"})
 	require.ErrorContains(t, err, `unknown provider "bogus"`)
 }
 
 func TestNewVault_MissingConfigFails(t *testing.T) {
 	chdirTemp(t)
 
-	_, _, err := newVault()
+	_, _, err := Current()
 	require.ErrorContains(t, err, "git vault install")
 }
 
@@ -115,8 +117,18 @@ func TestNewVault_ReadsProviderFromConfig(t *testing.T) {
 	t.Setenv(passphrase.EnvVar, "correct horse battery staple")
 	require.NoError(t, config.Save(config.DefaultFileName, config.Config{Provider: passphrase.Name}))
 
-	v, recipients, err := newVault()
+	v, recipients, err := Current()
 	require.NoError(t, err)
 	require.NotNil(t, v)
 	require.Equal(t, []string{"passphrase:shared"}, recipients)
+}
+
+func chdirTemp(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	old, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	require.NoError(t, exec.Command("git", "init").Run())
 }

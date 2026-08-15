@@ -3,6 +3,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ducduyn31/git-vault/internal/provider"
+
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
@@ -13,7 +15,7 @@ func newSmudgeCmd() *cobra.Command {
 		Args:   cobra.ExactArgs(1),
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, _, err := newVault()
+			v, _, err := provider.Current()
 			if err != nil {
 				return err
 			}

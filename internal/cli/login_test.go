@@ -22,6 +22,7 @@ import (
 	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
 	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault/hcvaulttest"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
+	"github.com/ducduyn31/git-vault/internal/provider"
 )
 
 func TestLoginCmd_GCPKMS_Succeeds(t *testing.T) {
@@ -106,40 +107,40 @@ func promptCmd(in, out *bytes.Buffer) *cobra.Command {
 func TestAttemptGcloudLogin_NoGcloudOnPath(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: false}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptGcloudLogin_Declined(t *testing.T) {
 	fakeGcloud(t, 0)
 	out := &bytes.Buffer{}
-	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("n\n"), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: false}))
 	require.Contains(t, out.String(), "Run `gcloud auth application-default login` now?")
 }
 
 func TestAttemptGcloudLogin_ConfirmedAndGcloudSucceeds(t *testing.T) {
 	fakeGcloud(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptGcloudLogin_ConfirmedButGcloudFails(t *testing.T) {
 	fakeGcloud(t, 1)
 	out := &bytes.Buffer{}
-	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("yes\n"), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptGcloudLogin_AutoLoginSkipsPrompt(t *testing.T) {
 	fakeGcloud(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: true}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptGcloudLogin_AutoLoginStillNeedsGcloud(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptGcloudLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[gcpkms.Name], config.Config{AutoLogin: true}))
 }
 
 func TestLoginCmd_AWSKMS_Succeeds(t *testing.T) {
@@ -235,86 +236,86 @@ func fakeAzCLI(t *testing.T, exitCode int) {
 func TestAttemptAWSSSOLogin_NoAWSCLIOnPath(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "", false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: false}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptAWSSSOLogin_Declined(t *testing.T) {
 	fakeAwsCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("n\n"), out), "", false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("n\n"), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: false}))
 	require.Contains(t, out.String(), "Run `aws sso login` now?")
 }
 
 func TestAttemptAWSSSOLogin_ConfirmedAndCLISucceeds(t *testing.T) {
 	fakeAwsCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "", false))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: false}))
 }
 
 func TestAttemptAWSSSOLogin_ConfirmedButCLIFails(t *testing.T) {
 	fakeAwsCLI(t, 1)
 	out := &bytes.Buffer{}
-	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("yes\n"), out), "", false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("yes\n"), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: false}))
 }
 
 func TestAttemptAWSSSOLogin_AutoLoginSkipsPrompt(t *testing.T) {
 	fakeAwsCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString(""), out), "", true))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: true}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptAWSSSOLogin_AutoLoginStillNeedsCLI(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString(""), out), "", true))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "", AutoLogin: true}))
 }
 
 func TestAttemptAWSSSOLogin_IncludesProfileInPrompt(t *testing.T) {
 	fakeAwsCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptAWSSSOLogin(promptCmd(bytes.NewBufferString("y\n"), out), "team-sso", false))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[awskms.Name], config.Config{AwsProfile: "team-sso", AutoLogin: false}))
 	require.Contains(t, out.String(), "aws sso login --profile team-sso")
 }
 
 func TestAttemptAzLogin_NoAzCLIOnPath(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: false}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptAzLogin_Declined(t *testing.T) {
 	fakeAzCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("n\n"), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: false}))
 	require.Contains(t, out.String(), "Run `az login` now?")
 }
 
 func TestAttemptAzLogin_ConfirmedAndCLISucceeds(t *testing.T) {
 	fakeAzCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptAzLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptAzLogin_ConfirmedButCLIFails(t *testing.T) {
 	fakeAzCLI(t, 1)
 	out := &bytes.Buffer{}
-	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("yes\n"), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptAzLogin_AutoLoginSkipsPrompt(t *testing.T) {
 	fakeAzCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptAzLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: true}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptAzLogin_AutoLoginStillNeedsCLI(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptAzLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[azurekms.Name], config.Config{AutoLogin: true}))
 }
 
 func TestLoginCmd_Vault_Succeeds(t *testing.T) {
@@ -367,32 +368,32 @@ func fakeVaultCLI(t *testing.T, exitCode int) {
 func TestAttemptVaultLogin_NoVaultCLIOnPath(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	out := &bytes.Buffer{}
-	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[hcvault.Name], config.Config{AutoLogin: false}))
 	require.Empty(t, out.String())
 }
 
 func TestAttemptVaultLogin_Declined(t *testing.T) {
 	fakeVaultCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("n\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("n\n"), out), provider.Remotes[hcvault.Name], config.Config{AutoLogin: false}))
 	require.Contains(t, out.String(), "Run `vault login` now?")
 }
 
 func TestAttemptVaultLogin_ConfirmedAndCLISucceeds(t *testing.T) {
 	fakeVaultCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("y\n"), out), false))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString("y\n"), out), provider.Remotes[hcvault.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptVaultLogin_ConfirmedButCLIFails(t *testing.T) {
 	fakeVaultCLI(t, 1)
 	out := &bytes.Buffer{}
-	require.False(t, attemptVaultLogin(promptCmd(bytes.NewBufferString("yes\n"), out), false))
+	require.False(t, attemptLogin(promptCmd(bytes.NewBufferString("yes\n"), out), provider.Remotes[hcvault.Name], config.Config{AutoLogin: false}))
 }
 
 func TestAttemptVaultLogin_AutoLoginSkipsPrompt(t *testing.T) {
 	fakeVaultCLI(t, 0)
 	out := &bytes.Buffer{}
-	require.True(t, attemptVaultLogin(promptCmd(bytes.NewBufferString(""), out), true))
+	require.True(t, attemptLogin(promptCmd(bytes.NewBufferString(""), out), provider.Remotes[hcvault.Name], config.Config{AutoLogin: true}))
 	require.Empty(t, out.String())
 }
