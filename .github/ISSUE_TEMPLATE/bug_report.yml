@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in git-vault does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here — use
+        [private vulnerability reporting](https://github.com/ducduyn31/git-vault/security/advisories/new)
+        instead.
+
+        Please redact anything sensitive from the output you paste: key IDs,
+        resource names, and hostnames may identify your infrastructure.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. git vault install --provider ...
+        2. git vault track "secrets/*.yaml"
+        3. git add secrets/prod.yaml
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: git-vault version
+      description: Output of `git vault version`, or the commit you built from.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Key provider
+      options:
+        - local
+        - gcpkms
+        - awskms
+        - azurekms
+        - vault
+        - not applicable
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and git version
+      placeholder: macOS 15.2, git 2.47.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: git vault status
+      description: Output of `git vault status` in the affected repo.
+      render: text

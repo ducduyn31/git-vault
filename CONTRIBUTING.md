@@ -6,7 +6,8 @@ code does.
 ## Reporting a security issue
 
 git-vault protects secrets, so please **do not** open a public issue for a
-vulnerability. Use GitHub's private vulnerability reporting on this repo
+vulnerability. Use
+[private vulnerability reporting](https://github.com/ducduyn31/git-vault/security/advisories/new)
 instead.
 
 ## Getting set up
