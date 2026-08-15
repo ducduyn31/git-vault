@@ -1,3 +1,7 @@
+// Package cli defines git-vault's subcommands: flag parsing, prompting,
+// and output. The work each command does lives elsewhere — see
+// internal/provider (which key provider, and building its vault),
+// internal/gitcmd (git plumbing), and internal/gitattr (.gitattributes).
 package cli
 
 import "github.com/spf13/cobra"

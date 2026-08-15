@@ -6,10 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
-	"github.com/ducduyn31/git-vault/internal/keyservice/awskms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/azurekms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/gcpkms"
-	"github.com/ducduyn31/git-vault/internal/keyservice/hcvault"
+	"github.com/ducduyn31/git-vault/internal/provider"
 	"github.com/ducduyn31/git-vault/internal/ui"
 )
 
@@ -17,52 +14,36 @@ import (
 // provider/key to a different target, then updates .git-vault.yaml. A
 // target that resolves to the exact same key as the current one is
 // rejected rather than silently no-op'd: for local/passphrase that's
-// always true (each has exactly one key source); for gcpkms/awskms/azurekms/vault
+// always true (each has exactly one key source); for gcpkms/awskms/azurekms/hclvault
 // it's only true when the resource ID/ARN/URL also matches, since two
 // different targets can share the provider name but name different keys.
-// See docs/superpowers/specs/2026-07-11-migrate-provider-design.md,
-// docs/superpowers/specs/2026-07-11-gcpkms-provider-design.md,
-// docs/superpowers/specs/2026-07-12-awskms-provider-design.md,
-// docs/superpowers/specs/2026-07-12-azurekms-provider-design.md, and
-// docs/superpowers/specs/2026-07-14-vault-provider-design.md.
 func newMigrateCmd() *cobra.Command {
+	var target, keyResourceID, awsProfile string
 	cmd := &cobra.Command{
 		Use:   "migrate",
 		Short: "Re-seal all tracked files under a different key provider",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := cmd.Flags().GetString("provider")
-			if err != nil {
-				return err
-			}
 			if target == "" {
 				return fmt.Errorf("git vault migrate: --provider is required")
 			}
-			keyResourceID, err := cmd.Flags().GetString("key-resource-id")
-			if err != nil {
-				return err
-			}
-			awsProfile, err := cmd.Flags().GetString("aws-profile")
+
+			cfg, err := provider.LoadConfig()
 			if err != nil {
 				return err
 			}
 
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
-			if (target == gcpkms.Name || target == awskms.Name || target == azurekms.Name || target == hcvault.Name) && keyResourceID == "" {
+			if _, remote := provider.Remotes[target]; remote && keyResourceID == "" {
 				return fmt.Errorf("git vault migrate: --key-resource-id is required for provider %q", target)
 			}
 
 			targetCfg := config.Config{Provider: target, KeyResourceID: keyResourceID, AwsProfile: awsProfile}
 
-			oldVault, oldRecipients, err := vaultForProvider(cfg)
+			oldVault, oldRecipients, err := provider.ForConfig(cfg)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
-			newVault, newRecipients, err := vaultForProvider(targetCfg)
+			newVault, newRecipients, err := provider.ForConfig(targetCfg)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
@@ -71,38 +52,16 @@ func newMigrateCmd() *cobra.Command {
 				return fmt.Errorf("git vault migrate: target is identical to the current key (%s); nothing to migrate", oldRecipients[0])
 			}
 
-			// Fail fast on a bad target key before resealTracked decrypts
-			// anything to plaintext on disk: resealTracked opens each
-			// tracked file under the OLD key before sealing it under the
-			// new one, so a malformed/unreachable target key would
-			// otherwise be discovered only after the first file is already
-			// plaintext, with .git-vault.yaml never updated. Mirrors the
-			// same round-trip check install.go runs before touching git
-			// config — see verifyGCPKMSRoundTrip/verifyAWSKMSRoundTrip/
-			// verifyAzureKMSRoundTrip in login.go. Unlike install/login,
-			// migrate does not offer to run gcloud/aws sso/az login on
-			// failure: it's a rarer, more deliberate operation than initial
-			// setup.
-			switch target {
-			case gcpkms.Name:
-				if err := verifyGCPKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
-					return fmt.Errorf("git vault migrate: %w", err)
-				}
-			case awskms.Name:
-				if err := verifyAWSKMSRoundTrip(cmd.Context(), keyResourceID, awsProfile); err != nil {
-					return fmt.Errorf("git vault migrate: %w", err)
-				}
-			case azurekms.Name:
-				if err := verifyAzureKMSRoundTrip(cmd.Context(), keyResourceID); err != nil {
-					return fmt.Errorf("git vault migrate: %w", err)
-				}
-			case hcvault.Name:
-				if err := verifyVaultRoundTrip(cmd.Context(), keyResourceID); err != nil {
-					return fmt.Errorf("git vault migrate: %w", err)
-				}
+			// Fail fast on a bad target key: ResealTracked opens each file
+			// under the old key before sealing it under the new one, so a
+			// bad target would otherwise surface mid-reseal, with files
+			// already plaintext and .git-vault.yaml never updated. No
+			// auto-login — migrate is deliberate enough to not offer one.
+			if err := verifyRoundTrip(cmd, targetCfg, false); err != nil {
+				return fmt.Errorf("git vault migrate: %w", err)
 			}
 
-			n, err := resealTracked(oldVault, newVault, newRecipients)
+			n, err := provider.ResealTracked(oldVault, newVault, newRecipients)
 			if err != nil {
 				return fmt.Errorf("git vault migrate: %w", err)
 			}
@@ -118,8 +77,8 @@ func newMigrateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().String("provider", "", "target key provider to migrate to (local, passphrase, gcpkms, awskms, azurekms, vault)")
-	cmd.Flags().String("key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, Azure Key Vault key URL, or Vault Transit key URL (required when --provider gcpkms, awskms, azurekms, or vault)")
-	cmd.Flags().String("aws-profile", "", "named AWS profile to use for credentials (awskms only)")
+	cmd.Flags().StringVar(&target, "provider", "", "target key provider to migrate to (local, passphrase, gcpkms, awskms, azurekms, vault)")
+	cmd.Flags().StringVar(&keyResourceID, "key-resource-id", "", "GCP KMS resource ID, AWS KMS ARN, Azure Key Vault key URL, or Vault Transit key URL (required when --provider gcpkms, awskms, azurekms, or vault)")
+	cmd.Flags().StringVar(&awsProfile, "aws-profile", "", "named AWS profile to use for credentials (awskms only)")
 	return cmd
 }

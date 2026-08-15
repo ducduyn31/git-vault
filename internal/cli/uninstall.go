@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ducduyn31/git-vault/internal/config"
 	"github.com/ducduyn31/git-vault/internal/gitattr"
+	"github.com/ducduyn31/git-vault/internal/gitcmd"
 	"github.com/ducduyn31/git-vault/internal/keyservice/local"
 	"github.com/ducduyn31/git-vault/internal/session"
 	"github.com/ducduyn31/git-vault/internal/ui"
@@ -19,32 +19,12 @@ import (
 )
 
 func newUninstallCmd() *cobra.Command {
+	var global, purgeConfig, purgeAttrs, purgeKeys, force bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Unregister the git-vault filter driver",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			global, err := cmd.Flags().GetBool("global")
-			if err != nil {
-				return err
-			}
-			purgeConfig, err := cmd.Flags().GetBool("purge-config")
-			if err != nil {
-				return err
-			}
-			purgeAttrs, err := cmd.Flags().GetBool("purge-attrs")
-			if err != nil {
-				return err
-			}
-			purgeKeys, err := cmd.Flags().GetBool("purge-keys")
-			if err != nil {
-				return err
-			}
-			force, err := cmd.Flags().GetBool("force")
-			if err != nil {
-				return err
-			}
-
 			sealed, plaintext, err := trackedFileStates()
 			if err != nil {
 				return fmt.Errorf("git vault uninstall: %w", err)
@@ -65,7 +45,7 @@ func newUninstallCmd() *cobra.Command {
 			}
 
 			for _, key := range []string{"filter.git-vault.clean", "filter.git-vault.smudge", "filter.git-vault.required"} {
-				if err := unsetGitConfig(global, key); err != nil {
+				if err := gitcmd.UnsetConfig(global, key); err != nil {
 					return fmt.Errorf("git vault uninstall: %w", err)
 				}
 			}
@@ -95,21 +75,19 @@ func newUninstallCmd() *cobra.Command {
 			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Uninstalled git-vault filter driver (%s scope).", scope))
 
 			if len(plaintext) > 0 {
-				warn := fmt.Sprintf("%d file(s) tracked by git-vault are currently plaintext and no longer protected now that the filter driver is unregistered:", len(plaintext))
-				for _, f := range plaintext {
-					warn += "\n  " + f
-				}
-				warn += "\nThey will be committed as plaintext if staged before you reinstall (`git vault install`) or handle them manually."
-				ui.Warn(cmd.OutOrStdout(), warn)
+				ui.Warn(cmd.OutOrStdout(), fmt.Sprintf(
+					"%d file(s) tracked by git-vault are currently plaintext and no longer protected now that the filter driver is unregistered:\n  %s\nThey will be committed as plaintext if staged before you reinstall (`git vault install`) or handle them manually.",
+					len(plaintext), strings.Join(plaintext, "\n  "),
+				))
 			}
 			return nil
 		},
 	}
-	cmd.Flags().Bool("global", false, "unregister the filter driver from the user's global git config")
-	cmd.Flags().Bool("purge-config", false, "also remove "+config.DefaultFileName)
-	cmd.Flags().Bool("purge-attrs", false, "also remove git-vault's filter lines from .gitattributes")
-	cmd.Flags().Bool("purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
-	cmd.Flags().Bool("force", false, "skip the --purge-keys confirmation prompt")
+	cmd.Flags().BoolVar(&global, "global", false, "unregister the filter driver from the user's global git config")
+	cmd.Flags().BoolVar(&purgeConfig, "purge-config", false, "also remove "+config.DefaultFileName)
+	cmd.Flags().BoolVar(&purgeAttrs, "purge-attrs", false, "also remove git-vault's filter lines from .gitattributes")
+	cmd.Flags().BoolVar(&purgeKeys, "purge-keys", false, "also delete this machine's local key material and cached session (irreversible: encrypted files become permanently unreadable unless the key is backed up elsewhere)")
+	cmd.Flags().BoolVar(&force, "force", false, "skip the --purge-keys confirmation prompt")
 	return cmd
 }
 
@@ -162,7 +140,7 @@ func trackedFileStates() (sealed, plaintext []string, err error) {
 		return nil, nil, nil
 	}
 
-	files, err := trackedFiles(patterns)
+	files, err := gitcmd.TrackedFiles(patterns)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,25 +156,6 @@ func trackedFileStates() (sealed, plaintext []string, err error) {
 		}
 	}
 	return sealed, plaintext, nil
-}
-
-// unsetGitConfig removes key from git config, treating "key not set" (git's
-// exit code 5) as success so uninstall stays idempotent.
-func unsetGitConfig(global bool, key string) error {
-	args := []string{"config"}
-	if global {
-		args = append(args, "--global")
-	}
-	args = append(args, "--unset", key)
-
-	out, err := exec.Command("git", args...).CombinedOutput()
-	if err == nil {
-		return nil
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 5 {
-		return nil
-	}
-	return fmt.Errorf("git %s: %w: %s", key, err, out)
 }
 
 func removeIfExists(path string) error {
