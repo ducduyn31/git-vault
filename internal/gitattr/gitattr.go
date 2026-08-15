@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -25,10 +26,8 @@ func Track(path, pattern string) error {
 	}
 
 	want := attrLine(pattern)
-	for _, line := range lines {
-		if line == want {
-			return nil
-		}
+	if slices.Contains(lines, want) {
+		return nil
 	}
 
 	lines = append(lines, want)
@@ -42,12 +41,7 @@ func isGitVaultLine(line string) bool {
 	if len(fields) < 2 {
 		return false
 	}
-	for _, f := range fields[1:] {
-		if f == "filter=git-vault" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(fields[1:], "filter=git-vault")
 }
 
 // Tracked returns the patterns tracked by git-vault's filter in the
