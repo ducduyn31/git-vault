@@ -87,3 +87,12 @@ Vault cluster / `vault login`).
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for build, test, and lint
 commands.
+
+## Security
+
+Found a vulnerability? Don't open a public issue — see
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE).
