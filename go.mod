@@ -19,7 +19,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/vault v0.44.0
 	golang.org/x/term v0.45.0
 	google.golang.org/api v0.286.0
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
