@@ -72,6 +72,29 @@ git vault encrypt secrets/prod.yaml
 git vault decrypt secrets/prod.yaml
 ```
 
+## AI coding agents
+
+git-vault ships its own agent skill, so an AI coding agent working in the
+repo knows the command surface and the rules around it (never commit a
+tracked file as plaintext, check `git vault status` first, and so on):
+
+```sh
+npx skills add ducduyn31/git-vault
+```
+
+That's the [`skills`](https://github.com/vercel-labs/skills) CLI — it knows
+where 75+ agents keep their skills, so it prompts for which of yours to
+install into. Add `-a claude-code -g -y` to pick an agent, install at the
+user level, and skip the prompts.
+
+Installing copies the file, so it won't follow later changes to this repo —
+run `npx skills update git-vault` to pull a newer version.
+
+No Node? It's one file. Copy
+[skills/git-vault/SKILL.md](skills/git-vault/SKILL.md) to wherever your
+agent looks — `.claude/skills/git-vault/SKILL.md`,
+`~/.codex/skills/git-vault/SKILL.md`, and so on.
+
 ## Team key-sharing with a shared key
 
 For a shared key backed by your org's existing SSO (rather than a local
