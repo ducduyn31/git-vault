@@ -15,10 +15,11 @@ func newTrackCmd() *cobra.Command {
 		Short: "Track a file pattern for git-vault encryption",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := gitattr.Track(".gitattributes", args[0]); err != nil {
+			pattern := repoPath(args[0])
+			if err := gitattr.Track(".gitattributes", pattern); err != nil {
 				return err
 			}
-			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Tracking %s", args[0]))
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Tracking %s", pattern))
 			return nil
 		},
 	}

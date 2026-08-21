@@ -20,10 +20,11 @@ func newDecryptCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := v.Open(args[0]); err != nil {
+			path := repoPath(args[0])
+			if err := v.Open(path); err != nil {
 				return err
 			}
-			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Opened %s", args[0]))
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Opened %s", path))
 			return nil
 		},
 	}
