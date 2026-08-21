@@ -203,3 +203,11 @@ func (v *Vault) OpenStream(w io.Writer, r io.Reader, format Format) error {
 	}
 	return nil
 }
+
+// IsSealedBytes reports whether data is a valid sops tree for format. It
+// is the in-memory counterpart of IsSealed, for content that never hits
+// disk (git filter streams).
+func IsSealedBytes(data []byte, format Format) bool {
+	_, err := storeForFormat(format).LoadEncryptedFile(data)
+	return err == nil
+}
