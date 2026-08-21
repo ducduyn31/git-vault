@@ -36,7 +36,7 @@ func newCleanCmd() *cobra.Command {
 				return err
 			}
 
-			return v.SealStream(cmd.OutOrStdout(), bytes.NewReader(plaintext), format, recipients)
+			return v.SealBytes(cmd.OutOrStdout(), plaintext, format, recipients)
 		},
 	}
 }
