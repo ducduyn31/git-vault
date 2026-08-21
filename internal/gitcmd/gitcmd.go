@@ -51,6 +51,7 @@ func UnsetConfig(global bool, key string) error {
 	return fmt.Errorf("git %s: %w: %s", key, err, out)
 }
 
+// configArgs builds arguments for a Git config command, optionally targeting the global configuration.
 func configArgs(global bool, rest ...string) []string {
 	args := []string{"config"}
 	if global {
@@ -62,7 +63,9 @@ func configArgs(global bool, rest ...string) []string {
 // IndexBlob returns the raw (unfiltered) blob content git currently has
 // staged for path, which is repo-root-relative — the same form git hands
 // filter drivers as %f. The bool is false when path has no index entry;
-// that is not an error condition for callers.
+// IndexBlob returns the raw staged blob for the repository-relative path.
+// The boolean is true when the blob is read successfully and false when the
+// path has no readable index entry or Git reports an error.
 func IndexBlob(path string) ([]byte, bool) {
 	out, err := exec.Command("git", "cat-file", "blob", ":"+path).Output()
 	if err != nil {
