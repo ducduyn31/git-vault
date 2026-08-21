@@ -58,3 +58,15 @@ func configArgs(global bool, rest ...string) []string {
 	}
 	return append(args, rest...)
 }
+
+// IndexBlob returns the raw (unfiltered) blob content git currently has
+// staged for path, which is repo-root-relative — the same form git hands
+// filter drivers as %f. The bool is false when path has no index entry;
+// that is not an error condition for callers.
+func IndexBlob(path string) ([]byte, bool) {
+	out, err := exec.Command("git", "cat-file", "blob", ":"+path).Output()
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}

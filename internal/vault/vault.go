@@ -91,13 +91,19 @@ func IsSealed(path string) (bool, error) {
 // re-invoke clean on already-sealed content (e.g. during a merge/rebase
 // re-apply), and sealing it a second time would double-wrap it.
 func (v *Vault) SealStream(w io.Writer, r io.Reader, format Format, recipients []string) error {
-	if len(recipients) == 0 {
-		return fmt.Errorf("vault: seal: no recipients provided")
-	}
-
 	plaintext, err := io.ReadAll(r)
 	if err != nil {
 		return fmt.Errorf("vault: read plaintext: %w", err)
+	}
+	return v.SealBytes(w, plaintext, format, recipients)
+}
+
+// SealBytes is SealStream for plaintext already in memory — the clean
+// filter reads stdin itself, to compare against the staged blob before
+// deciding to seal at all.
+func (v *Vault) SealBytes(w io.Writer, plaintext []byte, format Format, recipients []string) error {
+	if len(recipients) == 0 {
+		return fmt.Errorf("vault: seal: no recipients provided")
 	}
 
 	store := storeForFormat(format)
@@ -202,4 +208,12 @@ func (v *Vault) OpenStream(w io.Writer, r io.Reader, format Format) error {
 		return fmt.Errorf("vault: write plaintext: %w", err)
 	}
 	return nil
+}
+
+// IsSealedBytes reports whether data is a valid sops tree for format. It
+// is the in-memory counterpart of IsSealed, for content that never hits
+// disk (git filter streams).
+func IsSealedBytes(data []byte, format Format) bool {
+	_, err := storeForFormat(format).LoadEncryptedFile(data)
+	return err == nil
 }
