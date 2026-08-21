@@ -11,6 +11,8 @@ import (
 	"github.com/ducduyn31/git-vault/internal/vault"
 )
 
+// newCleanCmd creates the hidden Git clean filter command that encrypts plaintext
+// input for staging and preserves the staged blob when its plaintext is unchanged.
 func newCleanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "clean <path>",
@@ -54,7 +56,8 @@ func newCleanCmd() *cobra.Command {
 // would match itself and never get encrypted. Any other failure (no
 // index entry, unreadable blob, wrong key, bad MAC) just declines the
 // shortcut and lets the caller seal; the filter is required=true, so an
-// error here would abort the user's git command.
+// unchangedFromIndex returns the staged sealed blob when it decrypts to the given plaintext.
+// It reports false when the path has no matching sealed blob or the blob cannot be decrypted or does not match.
 func unchangedFromIndex(v *vault.Vault, path string, format vault.Format, plaintext []byte) ([]byte, bool) {
 	stored, ok := gitcmd.IndexBlob(path)
 	if !ok || !vault.IsSealedBytes(stored, format) {
