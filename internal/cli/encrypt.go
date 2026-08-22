@@ -20,10 +20,11 @@ func newEncryptCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := v.Seal(args[0], recipients); err != nil {
+			path := repoPath(args[0])
+			if err := v.Seal(path, recipients); err != nil {
 				return err
 			}
-			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Sealed %s", args[0]))
+			ui.New(cmd.OutOrStdout()).Info(fmt.Sprintf("Sealed %s", path))
 			return nil
 		},
 	}

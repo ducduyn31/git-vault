@@ -73,3 +73,19 @@ func IndexBlob(path string) ([]byte, bool) {
 	}
 	return out, true
 }
+
+// Toplevel returns the working tree's root directory and the caller's
+// current directory relative to it ("sub/", or empty at the root),
+// letting git resolve both rather than doing path math that has to guess
+// at symlinks. It fails outside a working tree (including bare repos).
+func Toplevel() (root, prefix string, err error) {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel", "--show-prefix").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
+	}
+	lines := strings.SplitN(string(out), "\n", 3)
+	if len(lines) < 2 || lines[0] == "" {
+		return "", "", fmt.Errorf("git rev-parse --show-toplevel: unexpected output %q", out)
+	}
+	return lines[0], lines[1], nil
+}
